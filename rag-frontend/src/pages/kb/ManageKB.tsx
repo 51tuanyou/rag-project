@@ -15,11 +15,13 @@ import {
   Stack,
   TextField,
   Typography,
+  IconButton,
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import FolderIcon from '@mui/icons-material/Folder'
 import AddIcon from '@mui/icons-material/Add'
-// import { useNavigate } from 'react-router-dom'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import { useNavigate } from 'react-router-dom'
 
 type KnowledgeBase = {
   id: string
@@ -45,7 +47,7 @@ const initialKBs: KnowledgeBase[] = [
 ]
 
 export default function ManageKB() {
-  // const navigate = useNavigate()
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [kbs, setKbs] = useState<KnowledgeBase[]>(initialKBs)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -94,7 +96,8 @@ export default function ManageKB() {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 3 }}>
+    <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
+      <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 3 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
@@ -106,7 +109,12 @@ export default function ManageKB() {
         <Grid size={{ xs: 12, md: 9 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
             <Typography variant="h6">Knowledge</Typography>
-            <TextField size="small" placeholder="Search" value={query} onChange={e => setQuery(e.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }} />
+            <Stack direction="row" spacing={2} alignItems="center">
+              <TextField size="small" placeholder="Search" value={query} onChange={e => setQuery(e.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }} />
+              <Button variant="outlined" onClick={() => navigate('/')} startIcon={<ArrowBackIcon />}>
+                返回主页面
+              </Button>
+            </Stack>
           </Stack>
 
           <Grid container spacing={2}>
@@ -206,7 +214,8 @@ export default function ManageKB() {
           <Button variant="contained" onClick={onSubmit}>{form.id ? '保存' : '新增'}</Button>
         </DialogActions>
       </Dialog>
-    </Container>
+      </Box>
+    </Box>
   )
 }
 

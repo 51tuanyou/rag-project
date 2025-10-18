@@ -16,9 +16,11 @@ import {
   MenuItem,
   Chip,
   Slider,
+  IconButton,
 } from '@mui/material'
 import Autocomplete from '@mui/material/Autocomplete'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 export default function KBChunkSettings() {
@@ -53,7 +55,14 @@ export default function KBChunkSettings() {
   const [hybridStrategy, setHybridStrategy] = useState<'weighted' | 'rerank'>('rerank')
 
   return (
-    <Container maxWidth="lg" sx={{ py: 3 }}>
+    <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
+      <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Typography variant="h6">Chunk Settings</Typography>
+        <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
+          返回管理知识库
+        </Button>
+      </Stack>
       <Stack direction="row" spacing={2}>
         <Box sx={{ flex: 1 }}>
           <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
@@ -222,7 +231,9 @@ export default function KBChunkSettings() {
             </Paper>
 
             <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-              <Button onClick={() => navigate(-1)}>Previous step</Button>
+              <Button variant="outlined" onClick={() => navigate(-1)} startIcon={<ArrowBackIcon />}>
+                Previous step
+              </Button>
               <Box sx={{ flex: 1 }} />
               <Button variant="contained" onClick={() => navigate('/manage/kb/processing', { state: {
                 files,
@@ -255,7 +266,8 @@ export default function KBChunkSettings() {
           </Paper>
         </Box>
       </Stack>
-    </Container>
+      </Box>
+    </Box>
   )
 }
 

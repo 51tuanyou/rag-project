@@ -36,7 +36,7 @@ export default function KBDocumentDetail() {
   return (
     <Container maxWidth="lg" sx={{ py: 2 }}>
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-        <IconButton onClick={() => navigate(-1)}><ArrowBack /></IconButton>
+        <IconButton onClick={() => navigate('/')}><ArrowBack /></IconButton>
         <InsertDriveFileIcon fontSize="small" />
         <Typography variant="h6" sx={{ mr: 1 }}>{fileName}</Typography>
         <Chip size="small" label="GENERAL" variant="outlined" />

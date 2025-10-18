@@ -16,6 +16,7 @@ import {
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useNavigate } from 'react-router-dom'
 
 type FileItem = { id: string; file: File }
@@ -42,8 +43,14 @@ export default function KBUpload() {
   const remove = (id: string) => setFiles(prev => prev.filter(f => f.id !== id))
 
   return (
-    <Container maxWidth="md" sx={{ py: 3 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>Upload file</Typography>
+    <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
+      <Box sx={{ maxWidth: 'md', width: '100%', px: 2 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Typography variant="h6">Upload file</Typography>
+        <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
+          返回管理知识库
+        </Button>
+      </Stack>
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }} onDragOver={e => e.preventDefault()} onDrop={onDrop}>
         <Stack spacing={1} alignItems="center" justifyContent="center" sx={{ color: 'text.secondary' }}>
           <UploadFileIcon />
@@ -72,10 +79,17 @@ export default function KBUpload() {
         ))}
       </List>
 
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <Button variant="contained" onClick={() => navigate('/manage/kb/chunk', { state: { files: files.map(f => f.file.name) } })}>Next</Button>
+      <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+        <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
+          Previous step
+        </Button>
+        <Box sx={{ flex: 1 }} />
+        <Button variant="contained" onClick={() => navigate('/manage/kb/chunk', { state: { files: files.map(f => f.file.name) } })}>
+          Next
+        </Button>
+      </Stack>
       </Box>
-    </Container>
+    </Box>
   )
 }
 

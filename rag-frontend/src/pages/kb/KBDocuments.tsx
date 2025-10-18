@@ -24,6 +24,7 @@ import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import Settings from '@mui/icons-material/Settings'
 import MoreVert from '@mui/icons-material/MoreVert'
 import Add from '@mui/icons-material/Add'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 export default function KBDocuments() {
@@ -32,8 +33,14 @@ export default function KBDocuments() {
   const navigate = useNavigate()
 
   return (
-    <Container maxWidth="lg" sx={{ py: 3 }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>Documents</Typography>
+    <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
+      <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Typography variant="h6">Documents</Typography>
+        <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
+          返回管理知识库
+        </Button>
+      </Stack>
 
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
         <Select size="small" value="all" sx={{ width: 140 }}>
@@ -94,7 +101,8 @@ export default function KBDocuments() {
           </TableBody>
         </Table>
       </TableContainer>
-    </Container>
+      </Box>
+    </Box>
   )
 }
 

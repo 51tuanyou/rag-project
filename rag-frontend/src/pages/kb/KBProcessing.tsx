@@ -8,10 +8,12 @@ import {
   Stack,
   TextField,
   Typography,
+  IconButton,
 } from '@mui/material'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 export default function KBProcessing() {
@@ -30,8 +32,14 @@ export default function KBProcessing() {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>🎉 Knowledge created</Typography>
+    <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
+      <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Typography variant="h5" fontWeight={700}>🎉 Knowledge created</Typography>
+        <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
+          返回管理知识库
+        </Button>
+      </Stack>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Typography variant="subtitle2" sx={{ mb: 1 }}>Knowledge name</Typography>
@@ -69,7 +77,8 @@ export default function KBProcessing() {
         <Box sx={{ flex: 1 }} />
         <Button variant="contained" onClick={() => navigate('/manage/kb/documents', { state: { files } })}>Go to document</Button>
       </Stack>
-    </Container>
+      </Box>
+    </Box>
   )
 }
 
