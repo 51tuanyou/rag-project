@@ -98,6 +98,9 @@ export default function ManageKB() {
   return (
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
       <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
+        <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
+          Xenera RAG Tool
+        </Typography>
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 3 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>

@@ -178,6 +178,9 @@ export default function ManageLLM() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 3 }}>
+      <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
+        Xenera RAG Tool
+      </Typography>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
         <Typography variant="h5">Model Provider</Typography>
         <Stack direction="row" spacing={1}>

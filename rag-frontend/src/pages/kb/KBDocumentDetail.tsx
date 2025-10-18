@@ -35,6 +35,9 @@ export default function KBDocumentDetail() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 2 }}>
+      <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
+        Xenera RAG Tool
+      </Typography>
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
         <IconButton onClick={() => navigate('/')}><ArrowBack /></IconButton>
         <InsertDriveFileIcon fontSize="small" />
