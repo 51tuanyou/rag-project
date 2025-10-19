@@ -8,7 +8,15 @@ from .models import ModelCredential, Provider, ProviderApiKey
 class ProviderApiKeySerializer(serializers.ModelSerializer):
     class Meta:
         model = ProviderApiKey
-        fields = ["id", "provider", "name", "secret", "is_selected"]
+        fields = [
+            "id",
+            "provider",
+            "name",
+            "secret",
+            "organization",
+            "api_base",
+            "is_selected",
+        ]
         extra_kwargs = {"secret": {"write_only": True}}
 
 

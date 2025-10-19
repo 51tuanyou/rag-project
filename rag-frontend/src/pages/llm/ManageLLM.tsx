@@ -77,6 +77,9 @@ export default function ManageLLM() {
     visionSupport: true,
     functionCallSupport: false,
   })
+  const [addKeyOpen, setAddKeyOpen] = useState(false)
+  const [addKeyProvider, setAddKeyProvider] = useState<string | null>(null)
+  const [newKey, setNewKey] = useState({ apiKey: '', organization: '', apiBase: '' })
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -148,6 +151,13 @@ export default function ManageLLM() {
   }
 
   const openKeyMenu = (pid: string, el: HTMLElement) => {
+    const prov = providers.find(p => p.id === pid)
+    if (prov && prov.apiKeys.length === 0) {
+      setAddKeyProvider(pid)
+      setNewKey({ apiKey: '', organization: '', apiBase: '' })
+      setAddKeyOpen(true)
+      return
+    }
     setKeyMenuProvider(pid)
     setKeyMenuAnchor(el)
   }
@@ -169,16 +179,15 @@ export default function ManageLLM() {
     closeKeyMenu()
   }
   const addKey = async () => {
-    if (!keyMenuProvider) return
-    const prov = providers.find(p => p.id === keyMenuProvider)
+    const pid = keyMenuProvider
+    if (!pid) return
+    const prov = providers.find(p => p.id === pid)
     if (!prov) return
-    const secret = window.prompt('Enter API secret value') || ''
-    if (!secret.trim()) return
     const name = `API_KEY${prov.apiKeys.length + 1}`
-    await fetch(`${API_BASE}/api/llm/providers/${keyMenuProvider}/keys/`, {
+    await fetch(`${API_BASE}/api/llm/providers/${pid}/keys/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, secret }),
+      body: JSON.stringify({ name, secret: newKey.apiKey, organization: newKey.organization || undefined, api_base: newKey.apiBase || undefined }),
     })
     await loadProviders()
   }
@@ -190,6 +199,18 @@ export default function ManageLLM() {
     await fetch(`${API_BASE}/api/llm/providers/${keyMenuProvider}/keys/${encodeURIComponent(name)}/`, {
       method: 'DELETE',
     })
+    await loadProviders()
+  }
+
+  const submitAddKey = async () => {
+    if (!addKeyProvider || !newKey.apiKey.trim()) return
+    await fetch(`${API_BASE}/api/llm/providers/${addKeyProvider}/keys/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: newKey.apiKey, organization: newKey.organization || undefined, api_base: newKey.apiBase || undefined }),
+    })
+    setAddKeyOpen(false)
+    setAddKeyProvider(null)
     await loadProviders()
   }
 
@@ -340,6 +361,37 @@ export default function ManageLLM() {
           <AddIcon fontSize="small" style={{ marginRight: 8 }} /> Add API Key
         </MenuItem>
       </Menu>
+
+      <Dialog open={addKeyOpen} onClose={() => setAddKeyOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Add OpenAI</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ mt: 0.5 }}>
+            <TextField
+              required
+              label="API Key"
+              placeholder="Enter your API Key"
+              value={newKey.apiKey}
+              onChange={e => setNewKey({ ...newKey, apiKey: e.target.value })}
+            />
+            <TextField
+              label="Organization"
+              placeholder="Enter your Organization ID"
+              value={newKey.organization}
+              onChange={e => setNewKey({ ...newKey, organization: e.target.value })}
+            />
+            <TextField
+              label="API Base"
+              placeholder="Enter your API Base, e.g. https://api.openai.com"
+              value={newKey.apiBase}
+              onChange={e => setNewKey({ ...newKey, apiBase: e.target.value })}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddKeyOpen(false)}>Cancel</Button>
+          <Button variant="contained" disabled={!newKey.apiKey.trim()} onClick={submitAddKey}>Save</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>

@@ -21,6 +21,8 @@ class ProviderApiKey(models.Model):
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, related_name="api_keys")
     name = models.CharField(max_length=100, help_text="Human-readable alias, e.g. API_KEY1")
     secret = models.TextField()
+    organization = models.CharField(max_length=120, blank=True, null=True)
+    api_base = models.URLField(max_length=300, blank=True, null=True)
     is_selected = models.BooleanField(default=False)
 
     class Meta:

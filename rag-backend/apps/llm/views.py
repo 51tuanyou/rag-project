@@ -21,28 +21,34 @@ class ProviderViewSet(viewsets.ModelViewSet):
     lookup_field = "slug"
 
     @action(detail=True, methods=["post"], url_path="toggle")
-    def toggle(self, request: Request, pk: Optional[str] = None) -> Response:
+    def toggle(self, request: Request, slug: Optional[str] = None) -> Response:
         provider = self.get_object()
         provider.enabled = bool(request.data.get("enabled", True))
         provider.save(update_fields=["enabled"])
         return Response(self.get_serializer(provider).data)
 
-    @action(detail=True, methods=["post"], url_path="keys")
-    def add_key(self, request: Request, pk: Optional[str] = None) -> Response:
+    @action(detail=True, methods=["get", "post"], url_path="keys")
+    def keys(self, request: Request, slug: Optional[str] = None) -> Response:
         provider = self.get_object()
-        serializer = ProviderApiKeySerializer(data={**request.data, "provider": provider.id})
+        if request.method.lower() == "get":
+            keys = provider.api_keys.all().order_by("-is_selected", "name")
+            return Response(ProviderApiKeySerializer(keys, many=True).data)
+
+        # POST: create a new key
+        data = {**request.data, "provider": provider.id}
+        if not data.get("name"):
+            next_index = provider.api_keys.count() + 1
+            data["name"] = f"API_KEY{next_index}"
+        serializer = ProviderApiKeySerializer(data=data)
         serializer.is_valid(raise_exception=True)
         key = serializer.save()
+        if provider.api_keys.filter(is_selected=True).count() == 0:
+            key.is_selected = True
+            key.save(update_fields=["is_selected"])
         return Response(ProviderApiKeySerializer(key).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["get"], url_path="keys")
-    def list_keys(self, request: Request, pk: Optional[str] = None) -> Response:
-        provider = self.get_object()
-        keys = provider.api_keys.all().order_by("-is_selected", "name")
-        return Response(ProviderApiKeySerializer(keys, many=True).data)
-
     @action(detail=True, methods=["post"], url_path="select-key")
-    def select_key(self, request: Request, pk: Optional[str] = None) -> Response:
+    def select_key(self, request: Request, slug: Optional[str] = None) -> Response:
         provider = self.get_object()
         name = request.data.get("name")
         if not name:
@@ -57,7 +63,7 @@ class ProviderViewSet(viewsets.ModelViewSet):
         return Response(ProviderApiKeySerializer(key).data)
 
     @action(detail=True, methods=["delete"], url_path=r"keys/(?P<name>[^/]+)")
-    def delete_key(self, request: Request, pk: Optional[str] = None, name: Optional[str] = None) -> Response:
+    def delete_key(self, request: Request, slug: Optional[str] = None, name: Optional[str] = None) -> Response:
         provider = self.get_object()
         key = get_object_or_404(ProviderApiKey, provider=provider, name=name)
         key.delete()
