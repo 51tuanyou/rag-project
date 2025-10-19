@@ -90,3 +90,65 @@ class ModelCredentialViewSet(viewsets.ModelViewSet):
         mc.enabled = bool(request.data.get("enabled", True))
         mc.save(update_fields=["enabled"])
         return Response(self.get_serializer(mc).data)
+
+    # Upsert-style create to avoid duplicate 400 when same (provider, model_id)
+    def create(self, request: Request, *args, **kwargs) -> Response:  # type: ignore[override]
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated = dict(serializer.validated_data)
+        provider = validated.get("provider")
+        model_id = validated.get("model_id")
+
+        # Fill missing credentials from provider selected key
+        cred_secret = validated.get("secret")
+        cred_org = validated.get("organization")
+        cred_base = validated.get("base_url")
+        # Only backfill from provider if a field is missing OR usingExistingKey was intended (secret empty)
+        if not (cred_secret and cred_org and cred_base):
+            selected_key = (
+                ProviderApiKey.objects.filter(provider=provider, is_selected=True).first()
+                or ProviderApiKey.objects.filter(provider=provider).order_by("name").first()
+            )
+            if selected_key is not None:
+                if not cred_secret:
+                    validated["secret"] = selected_key.secret
+                if not cred_org:
+                    validated["organization"] = selected_key.organization or ""
+                if not cred_base:
+                    validated["base_url"] = selected_key.api_base or ""
+        # Ensure we have non-empty values
+        if not validated.get("secret") or not validated.get("base_url"):
+            return Response(
+                {"detail": "Missing credentials: provide api key and base url via model or provider key."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        existing = ModelCredential.objects.filter(provider=provider, model_id=model_id).first()
+        if existing:
+            # Update a subset of fields if provided
+            updatable = [
+                "model_name",
+                "model_type",
+                "base_url",
+                "secret",
+                "organization",
+                "context_size",
+                "max_tokens",
+                "completion_mode",
+                "vision_support",
+                "function_call_support",
+                "enabled",
+            ]
+            changed = False
+            for field in updatable:
+                if field in validated and validated[field] is not None:
+                    setattr(existing, field, validated[field])
+                    changed = True
+            if changed:
+                existing.save()
+            return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+
+        created = ModelCredential.objects.create(**validated)
+        data = self.get_serializer(created).data
+        headers = self.get_success_headers(data)
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)

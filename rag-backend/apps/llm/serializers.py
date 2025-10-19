@@ -25,6 +25,8 @@ class ModelCredentialSerializer(serializers.ModelSerializer):
     name = serializers.CharField(source="model_name", read_only=True)
     tags = serializers.SerializerMethodField(read_only=True)
     provider = serializers.SlugRelatedField(slug_field="slug", queryset=Provider.objects.all())
+    # Relax URL validation: accept any string / blank / null
+    base_url = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = ModelCredential
@@ -35,6 +37,8 @@ class ModelCredentialSerializer(serializers.ModelSerializer):
             "model_name",
             "model_type",
             "base_url",
+            "secret",
+            "organization",
             "context_size",
             "max_tokens",
             "completion_mode",
@@ -45,6 +49,7 @@ class ModelCredentialSerializer(serializers.ModelSerializer):
             "name",
             "tags",
         ]
+        extra_kwargs = {"secret": {"write_only": True}}
 
     def get_tags(self, obj: ModelCredential) -> List[str]:
         return [obj.model_type] if obj.model_type else []

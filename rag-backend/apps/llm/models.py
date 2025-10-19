@@ -36,7 +36,10 @@ class ModelCredential(models.Model):
     model_id = models.CharField(max_length=120)
     model_name = models.CharField(max_length=120)
     model_type = models.CharField(max_length=50)  # e.g. LLM, TEXT EMBEDDING
-    base_url = models.URLField(max_length=300)
+    base_url = models.URLField(max_length=300, blank=True, null=True)
+    # Optional per-model overrides
+    secret = models.TextField(blank=True, null=True)
+    organization = models.CharField(max_length=120, blank=True, null=True)
     context_size = models.PositiveIntegerField(default=4096)
     max_tokens = models.PositiveIntegerField(default=4096)
     completion_mode = models.CharField(max_length=30, default="Chat")  # Chat/Completion

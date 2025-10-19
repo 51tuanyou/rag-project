@@ -49,9 +49,9 @@ type AddModelForm = {
   providerId: string
   modelName: string
   modelType: string
-  authName: string
-  baseUrl: string
-  contextSize: string
+  apiKey: string
+  organization: string
+  apiBase: string
 }
 
 export default function ManageLLM() {
@@ -59,8 +59,10 @@ export default function ManageLLM() {
   const [query, setQuery] = useState('')
   const [providers, setProviders] = useState<Provider[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [form, setForm] = useState<AddModelForm>({ providerId: 'ollama', modelName: '', modelType: '', authName: '', baseUrl: '', contextSize: '4096' })
+  const [form, setForm] = useState<AddModelForm>({ providerId: 'ollama', modelName: '', modelType: 'LLM', apiKey: '', organization: '', apiBase: '' })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [usingExistingKey, setUsingExistingKey] = useState(false)
+  const [usingKeyAlias, setUsingKeyAlias] = useState<string>('')
   const [keyMenuAnchor, setKeyMenuAnchor] = useState<null | HTMLElement>(null)
   const [keyMenuProvider, setKeyMenuProvider] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -120,8 +122,26 @@ export default function ManageLLM() {
     await loadProviders()
   }
 
-  const openAddModel = (pid: string) => {
-    setForm({ providerId: pid, modelName: '', modelType: '', authName: '', baseUrl: '', contextSize: '4096' })
+  const openAddModel = async (pid: string) => {
+    const prov = providers.find(p => p.id === pid)
+    setUsingExistingKey(false)
+    setUsingKeyAlias('')
+    let organization = ''
+    let apiBase = ''
+    if (prov && prov.apiKeys.length > 0) {
+      const alias = prov.apiKeys[prov.selectedKey ?? 0] || prov.apiKeys[0]
+      try {
+        const res = await fetch(`${API_BASE}/api/llm/providers/${pid}/keys/${encodeURIComponent(alias)}/`)
+        if (res.ok) {
+          const data = await res.json()
+          organization = data.organization || ''
+          apiBase = data.api_base || ''
+          setUsingExistingKey(true)
+          setUsingKeyAlias(alias)
+        }
+      } catch {}
+    }
+    setForm({ providerId: pid, modelName: '', modelType: 'LLM', apiKey: '', organization, apiBase })
     setErrors({})
     setDialogOpen(true)
   }
@@ -130,8 +150,7 @@ export default function ManageLLM() {
     const es: Record<string, string> = {}
     if (!v.modelName.trim()) es.modelName = '必填'
     if (!v.modelType.trim()) es.modelType = '必选'
-    if (!v.baseUrl.trim()) es.baseUrl = '必填'
-    if (!v.contextSize.trim() || isNaN(Number(v.contextSize))) es.contextSize = '请输入数字'
+    if (!usingExistingKey && !v.apiKey.trim()) es.apiKey = '必填'
     return es
   }
 
@@ -139,6 +158,7 @@ export default function ManageLLM() {
     const es = validate(form)
     setErrors(es)
     if (Object.keys(es).length > 0) return
+    // Create model credential only; backend will copy global credentials if needed
     await fetch(`${API_BASE}/api/llm/models/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -147,8 +167,10 @@ export default function ManageLLM() {
         model_id: form.modelName,
         model_name: form.modelName,
         model_type: form.modelType,
-        base_url: form.baseUrl,
-        context_size: Number(form.contextSize),
+        base_url: form.apiBase || undefined,
+        secret: form.apiKey || undefined,
+        organization: form.organization || undefined,
+        context_size: 4096,
       }),
     })
     await loadProviders()
@@ -541,9 +563,19 @@ export default function ManageLLM() {
       </Dialog>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add model</DialogTitle>
+        <DialogTitle>Add OpenAI</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>Model Type *</Typography>
+              <RadioGroup value={form.modelType} onChange={(_, v) => setForm({ ...form, modelType: v })}>
+                <FormControlLabel value="LLM" control={<Radio />} label="LLM" />
+                <FormControlLabel value="TEXT EMBEDDING" control={<Radio />} label="Text Embedding" />
+                <FormControlLabel value="SPEECH2TEXT" control={<Radio />} label="Speech2text" />
+                <FormControlLabel value="MODERATION" control={<Radio />} label="Moderation" />
+                <FormControlLabel value="TTS" control={<Radio />} label="TTS" />
+              </RadioGroup>
+            </Box>
             <TextField
               required
               label="Model Name"
@@ -554,54 +586,32 @@ export default function ManageLLM() {
               helperText={errors.modelName}
             />
             <TextField
-              required
-              select
-              label="Model Type"
-              placeholder="Please select"
-              value={form.modelType}
-              onChange={e => setForm({ ...form, modelType: e.target.value })}
-              error={Boolean(errors.modelType)}
-              helperText={errors.modelType}
-              SelectProps={{ native: true }}
-            >
-              <option value=""></option>
-              <option value="LLM">LLM</option>
-              <option value="TEXT EMBEDDING">TEXT EMBEDDING</option>
-              <option value="RERANK">RERANK</option>
-              <option value="SPEECH2TEXT">SPEECH2TEXT</option>
-              <option value="TTS">TTS</option>
-            </TextField>
-
-            <Divider textAlign="left">MODEL CREDENTIAL</Divider>
-            <TextField
-              label="Authorization Name"
-              placeholder="Please enter"
-              value={form.authName}
-              onChange={e => setForm({ ...form, authName: e.target.value })}
+              required={!usingExistingKey}
+              label={`API Key${usingExistingKey ? ' (using existing)' : ''}`}
+              placeholder={usingExistingKey ? `Using ${usingKeyAlias}` : 'Enter your API Key'}
+              value={form.apiKey}
+              onChange={e => setForm({ ...form, apiKey: e.target.value })}
+              error={Boolean(errors.apiKey)}
+              helperText={errors.apiKey}
             />
             <TextField
-              required
-              label="Base URL"
-              placeholder="Base url of server, e.g. http://192.168.1.100:11434"
-              value={form.baseUrl}
-              onChange={e => setForm({ ...form, baseUrl: e.target.value })}
-              error={Boolean(errors.baseUrl)}
-              helperText={errors.baseUrl}
+              label="Organization"
+              placeholder="Enter your Organization ID"
+              value={form.organization}
+              onChange={e => setForm({ ...form, organization: e.target.value })}
             />
             <TextField
-              required
-              label="Model context size"
-              placeholder="4096"
-              value={form.contextSize}
-              onChange={e => setForm({ ...form, contextSize: e.target.value })}
-              error={Boolean(errors.contextSize)}
-              helperText={errors.contextSize}
+              label="API Base"
+              placeholder="Enter your API Base"
+              value={form.apiBase}
+              onChange={e => setForm({ ...form, apiBase: e.target.value })}
             />
+            <Button size="small" variant="text" sx={{ alignSelf: 'flex-start' }} href="#" target="_blank">Get your API Key from OpenAI</Button>
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={submitModel}>Add</Button>
+          <Button variant="contained" disabled={!form.modelName.trim() || (!usingExistingKey && !form.apiKey.trim())} onClick={submitModel}>Save</Button>
         </DialogActions>
       </Dialog>
     </Container>
