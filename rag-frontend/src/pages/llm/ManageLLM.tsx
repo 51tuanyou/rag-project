@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -40,39 +40,10 @@ type Provider = {
   apiKeys: string[]
   selectedKey?: number
   enabled: boolean
-  models?: { id: string; name: string; tags: string[]; enabled: boolean }[]
+  models?: { id: string | number; name: string; tags: string[]; enabled: boolean }[]
 }
 
-const initialProviders: Provider[] = [
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    badges: ['LLM', 'TEXT EMBEDDING', 'SPEECH2TEXT', 'MODERATION', 'TTS'],
-    apiKeys: ['API_KEY1'],
-    selectedKey: 0,
-    enabled: true,
-    models: [
-      { id: 'gpt-5-chat-latest', name: 'gpt-5-chat-latest', tags: ['LLM', 'CHAT', '128K'], enabled: true },
-      { id: 'gpt-5', name: 'gpt-5', tags: ['LLM', 'CHAT', '400K'], enabled: true },
-      { id: 'gpt-5-mini', name: 'gpt-5-mini', tags: ['LLM', 'CHAT', '400K'], enabled: true },
-      { id: 'gpt-4.1', name: 'gpt-4.1', tags: ['LLM', 'CHAT', '1047K'], enabled: true },
-      { id: 'gpt-4o-latest', name: 'gpt-4o-latest', tags: ['LLM', 'CHAT', '128K'], enabled: true },
-    ],
-  },
-  { id: 'deepseek', name: 'deepseek', badges: ['LLM'], apiKeys: ['API_KEY1'], selectedKey: 0, enabled: true },
-  { id: 'tongyi', name: 'TONGYI', badges: ['LLM', 'TEXT EMBEDDING', 'RERANK', 'SPEECH2TEXT', 'TTS'], apiKeys: ['API_KEY1'], selectedKey: 0, enabled: true },
-  {
-    id: 'ollama',
-    name: 'Ollama',
-    badges: ['LLM', 'TEXT EMBEDDING', 'RERANK'],
-    apiKeys: [],
-    enabled: true,
-    models: [
-      { id: 'deepseek-r1', name: 'deepseek-r1:1.5b', tags: ['LLM', 'CHAT', '4K'], enabled: true },
-      { id: 'bge-m3', name: 'bge-m3', tags: ['TEXT EMBEDDING', '4K'], enabled: true },
-    ],
-  },
-]
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
 
 type AddModelForm = {
   providerId: string
@@ -86,7 +57,7 @@ type AddModelForm = {
 export default function ManageLLM() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
-  const [providers, setProviders] = useState<Provider[]>(initialProviders)
+  const [providers, setProviders] = useState<Provider[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<AddModelForm>({ providerId: 'ollama', modelName: '', modelType: '', authName: '', baseUrl: '', contextSize: '4096' })
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -113,12 +84,32 @@ export default function ManageLLM() {
     return providers.filter(p => p.name.toLowerCase().includes(q) || p.badges.some(b => b.toLowerCase().includes(q)))
   }, [providers, query])
 
-  const toggleProvider = (id: string, enabled: boolean) => {
-    setProviders(prev => prev.map(p => (p.id === id ? { ...p, enabled } : p)))
+  const loadProviders = async () => {
+    const res = await fetch(`${API_BASE}/api/llm/providers/`)
+    const data = await res.json()
+    setProviders(data as Provider[])
   }
 
-  const toggleModel = (pid: string, mid: string, enabled: boolean) => {
-    setProviders(prev => prev.map(p => p.id !== pid ? p : { ...p, models: p.models?.map(m => m.id === mid ? { ...m, enabled } : m) }))
+  useEffect(() => {
+    loadProviders()
+  }, [])
+
+  const toggleProvider = async (id: string, enabled: boolean) => {
+    await fetch(`${API_BASE}/api/llm/providers/${id}/toggle/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+    await loadProviders()
+  }
+
+  const toggleModel = async (_pid: string, mid: string | number, enabled: boolean) => {
+    await fetch(`${API_BASE}/api/llm/models/${mid}/toggle/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+    await loadProviders()
   }
 
   const openAddModel = (pid: string) => {
@@ -136,17 +127,23 @@ export default function ManageLLM() {
     return es
   }
 
-  const submitModel = () => {
+  const submitModel = async () => {
     const es = validate(form)
     setErrors(es)
     if (Object.keys(es).length > 0) return
-    setProviders(prev => prev.map(p => p.id !== form.providerId ? p : {
-      ...p,
-      models: [
-        ...(p.models ?? []),
-        { id: `m_${Date.now()}`, name: form.modelName, tags: [form.modelType], enabled: true },
-      ],
-    }))
+    await fetch(`${API_BASE}/api/llm/models/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: form.providerId,
+        model_id: form.modelName,
+        model_name: form.modelName,
+        model_type: form.modelType,
+        base_url: form.baseUrl,
+        context_size: Number(form.contextSize),
+      }),
+    })
+    await loadProviders()
     setDialogOpen(false)
   }
 
@@ -158,22 +155,42 @@ export default function ManageLLM() {
     setKeyMenuProvider(null)
     setKeyMenuAnchor(null)
   }
-  const selectKey = (idx: number) => {
+  const selectKey = async (idx: number) => {
     if (!keyMenuProvider) return
-    setProviders(prev => prev.map(p => p.id !== keyMenuProvider ? p : { ...p, selectedKey: idx }))
+    const prov = providers.find(p => p.id === keyMenuProvider)
+    if (!prov) return
+    const name = prov.apiKeys[idx]
+    await fetch(`${API_BASE}/api/llm/providers/${keyMenuProvider}/select-key/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    await loadProviders()
     closeKeyMenu()
   }
-  const addKey = () => {
+  const addKey = async () => {
     if (!keyMenuProvider) return
-    setProviders(prev => prev.map(p => p.id !== keyMenuProvider ? p : { ...p, apiKeys: [...p.apiKeys, `API_KEY${p.apiKeys.length + 1}`], selectedKey: p.apiKeys.length }))
+    const prov = providers.find(p => p.id === keyMenuProvider)
+    if (!prov) return
+    const secret = window.prompt('Enter API secret value') || ''
+    if (!secret.trim()) return
+    const name = `API_KEY${prov.apiKeys.length + 1}`
+    await fetch(`${API_BASE}/api/llm/providers/${keyMenuProvider}/keys/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, secret }),
+    })
+    await loadProviders()
   }
-  const deleteKey = (idx: number) => {
+  const deleteKey = async (idx: number) => {
     if (!keyMenuProvider) return
-    setProviders(prev => prev.map(p => {
-      if (p.id !== keyMenuProvider) return p
-      const next = p.apiKeys.filter((_, i) => i !== idx)
-      return { ...p, apiKeys: next, selectedKey: next.length ? 0 : undefined }
-    }))
+    const prov = providers.find(p => p.id === keyMenuProvider)
+    if (!prov) return
+    const name = prov.apiKeys[idx]
+    await fetch(`${API_BASE}/api/llm/providers/${keyMenuProvider}/keys/${encodeURIComponent(name)}/`, {
+      method: 'DELETE',
+    })
+    await loadProviders()
   }
 
   return (
