@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -28,31 +28,78 @@ export default function KBChunkSettings() {
   const location = useLocation()
   const files: string[] = useMemo(() => (location.state?.files ?? []) as string[], [location.state])
 
-  const [delimiter, setDelimiter] = useState('\n\n')
-  const [maxLen, setMaxLen] = useState('1024')
-  const [overlap, setOverlap] = useState('50')
-  const [replaceSpaces, setReplaceSpaces] = useState(true)
-  const [indexMethod, setIndexMethod] = useState<'hq' | 'eco'>('hq')
+  const [delimiter, setDelimiter] = useState(() => localStorage.getItem('kb.delimiter') || '\n\n')
+  const [maxLen, setMaxLen] = useState(() => localStorage.getItem('kb.maxLen') || '1024')
+  const [overlap, setOverlap] = useState(() => localStorage.getItem('kb.overlap') || '50')
+  const [replaceSpaces, setReplaceSpaces] = useState(() => {
+    const saved = localStorage.getItem('kb.replaceSpaces')
+    return saved === null ? true : saved === 'true'
+  })
+  const [deleteUrls, setDeleteUrls] = useState(() => localStorage.getItem('kb.deleteUrls') === 'true')
+  const [qaFormat, setQaFormat] = useState(() => localStorage.getItem('kb.qaFormat') === 'true')
+  const [qaLanguage, setQaLanguage] = useState(() => localStorage.getItem('kb.qaLanguage') || 'English')
+  const [indexMethod, setIndexMethod] = useState<'hq' | 'eco'>(() => (localStorage.getItem('kb.indexMethod') as 'hq' | 'eco') || 'hq')
   type EmbeddingModel = { id: string; provider: string; label: string; tags?: string[] }
-  const embeddingOptions: EmbeddingModel[] = [
-    { id: 'text-embedding-3-large', provider: 'OpenAI', label: 'text-embedding-3-large' },
-    { id: 'text-embedding-3-small', provider: 'OpenAI', label: 'text-embedding-3-small' },
-    { id: 'text-embedding-ada-002', provider: 'OpenAI', label: 'text-embedding-ada-002' },
-    { id: 'text-embedding-v1', provider: 'TONGYI', label: 'text-embedding-v1' },
-    { id: 'text-embedding-v2', provider: 'TONGYI', label: 'text-embedding-v2', tags: ['TEXT EMBEDDING', '2K'] },
-    { id: 'text-embedding-v3', provider: 'TONGYI', label: 'text-embedding-v3', tags: ['TEXT EMBEDDING', '8K'] },
-    { id: 'text-embedding-v4', provider: 'TONGYI', label: 'text-embedding-v4' },
-    { id: 'bge-m3', provider: 'Ollama', label: 'bge-m3' },
-  ]
-  const [embedding, setEmbedding] = useState<EmbeddingModel | null>(embeddingOptions[0])
+  const [embeddingOptions, setEmbeddingOptions] = useState<EmbeddingModel[]>([])
+  const [embedding, setEmbedding] = useState<EmbeddingModel | null>(null)
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
   const [highlighted, setHighlighted] = useState<EmbeddingModel | null>(null)
-  const [rerankEnabled, setRerankEnabled] = useState(false)
-  const [rerankModel, setRerankModel] = useState('qte-rerank')
-  const [retrievalMode, setRetrievalMode] = useState<'vector' | 'fulltext' | 'hybrid'>('vector')
-  const [topK, setTopK] = useState(3)
-  const [scoreEnabled, setScoreEnabled] = useState(false)
-  const [score, setScore] = useState(0.5)
-  const [hybridStrategy, setHybridStrategy] = useState<'weighted' | 'rerank'>('rerank')
+  const [rerankEnabled, setRerankEnabled] = useState(() => localStorage.getItem('kb.rerankEnabled') === 'true')
+  const [rerankModel, setRerankModel] = useState(() => localStorage.getItem('kb.rerankModel') || 'qte-rerank')
+  const [retrievalMode, setRetrievalMode] = useState<'vector' | 'fulltext' | 'hybrid'>(() => (localStorage.getItem('kb.retrievalMode') as 'vector' | 'fulltext' | 'hybrid') || 'vector')
+  const [topK, setTopK] = useState(() => parseInt(localStorage.getItem('kb.topK') || '3'))
+  const [scoreEnabled, setScoreEnabled] = useState(() => localStorage.getItem('kb.scoreEnabled') === 'true')
+  const [score, setScore] = useState(() => parseFloat(localStorage.getItem('kb.score') || '0.5'))
+  const [hybridStrategy, setHybridStrategy] = useState<'weighted' | 'rerank'>(() => (localStorage.getItem('kb.hybridStrategy') as 'weighted' | 'rerank') || 'rerank')
+
+  // Load embedding models from backend
+  useEffect(() => {
+    const loadEmbeddingModels = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/llm/models/?enabled=true&model_type=TEXT EMBEDDING`)
+        const data = await res.json()
+        const models = data.results || data
+        const groupedModels = models.map((model: any) => ({
+          id: model.id.toString(),
+          provider: model.provider,
+          label: model.model_name,
+          tags: ['TEXT EMBEDDING']
+        }))
+        setEmbeddingOptions(groupedModels)
+        if (groupedModels.length > 0) {
+          // Try to restore from localStorage first
+          const savedEmbeddingId = localStorage.getItem('kb.embeddingId')
+          const savedEmbedding = savedEmbeddingId ? groupedModels.find(m => m.id === savedEmbeddingId) : null
+          setEmbedding(savedEmbedding || groupedModels[0])
+        }
+      } catch (error) {
+        console.error('Failed to load embedding models:', error)
+      }
+    }
+    loadEmbeddingModels()
+  }, [])
+
+  // Persist settings to localStorage
+  useEffect(() => { localStorage.setItem('kb.delimiter', delimiter) }, [delimiter])
+  useEffect(() => { localStorage.setItem('kb.maxLen', maxLen) }, [maxLen])
+  useEffect(() => { localStorage.setItem('kb.overlap', overlap) }, [overlap])
+  useEffect(() => { localStorage.setItem('kb.replaceSpaces', replaceSpaces.toString()) }, [replaceSpaces])
+  useEffect(() => { localStorage.setItem('kb.deleteUrls', deleteUrls.toString()) }, [deleteUrls])
+  useEffect(() => { localStorage.setItem('kb.qaFormat', qaFormat.toString()) }, [qaFormat])
+  useEffect(() => { localStorage.setItem('kb.qaLanguage', qaLanguage) }, [qaLanguage])
+  useEffect(() => { localStorage.setItem('kb.indexMethod', indexMethod) }, [indexMethod])
+  useEffect(() => { localStorage.setItem('kb.rerankEnabled', rerankEnabled.toString()) }, [rerankEnabled])
+  useEffect(() => { localStorage.setItem('kb.rerankModel', rerankModel) }, [rerankModel])
+  useEffect(() => { localStorage.setItem('kb.retrievalMode', retrievalMode) }, [retrievalMode])
+  useEffect(() => { localStorage.setItem('kb.topK', topK.toString()) }, [topK])
+  useEffect(() => { localStorage.setItem('kb.scoreEnabled', scoreEnabled.toString()) }, [scoreEnabled])
+  useEffect(() => { localStorage.setItem('kb.score', score.toString()) }, [score])
+  useEffect(() => { localStorage.setItem('kb.hybridStrategy', hybridStrategy) }, [hybridStrategy])
+  useEffect(() => { 
+    if (embedding) {
+      localStorage.setItem('kb.embeddingId', embedding.id)
+    }
+  }, [embedding])
 
   return (
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
@@ -71,15 +118,87 @@ export default function KBChunkSettings() {
           <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
             <Typography variant="subtitle1" fontWeight={600}>Chunk Settings</Typography>
             <Divider sx={{ my: 1 }} />
+            
+            {/* General Setting */}
+            <Paper variant="outlined" sx={{ p: 2, mb: 2, borderColor: 'primary.main', bgcolor: 'primary.50' }}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: 'primary.light', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography variant="caption" sx={{ color: 'primary.contrastText' }}>⚙</Typography>
+                </Box>
+                <Typography variant="subtitle2" fontWeight={600}>General</Typography>
+              </Stack>
+              <Typography variant="body2" color="text.secondary">
+                General text chunking mode, the chunks retrieved and recalled are the same.
+              </Typography>
+            </Paper>
+
             <Stack spacing={2}>
               <Stack direction="row" spacing={2}>
-                <TextField label="Delimiter" value={delimiter} onChange={e => setDelimiter(e.target.value)} size="small" sx={{ width: 240 }} />
-                <TextField label="Maximum chunk length" value={maxLen} onChange={e => setMaxLen(e.target.value)} size="small" sx={{ width: 240 }} InputProps={{ endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span> }} />
-                <TextField label="Chunk overlap" value={overlap} onChange={e => setOverlap(e.target.value)} size="small" sx={{ width: 240 }} InputProps={{ endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span> }} />
+                <TextField 
+                  label="Delimiter" 
+                  value={delimiter} 
+                  onChange={e => setDelimiter(e.target.value)} 
+                  size="small" 
+                  sx={{ width: 240 }} 
+                  InputProps={{
+                    endAdornment: <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>?</Typography>
+                  }}
+                />
+                <TextField 
+                  label="Maximum chunk length" 
+                  value={maxLen} 
+                  onChange={e => setMaxLen(e.target.value)} 
+                  size="small" 
+                  sx={{ width: 240 }} 
+                  InputProps={{ 
+                    endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span>
+                  }} 
+                />
+                <TextField 
+                  label="Chunk overlap" 
+                  value={overlap} 
+                  onChange={e => setOverlap(e.target.value)} 
+                  size="small" 
+                  sx={{ width: 240 }} 
+                  InputProps={{ 
+                    endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span>
+                  }} 
+                />
               </Stack>
-              <FormControlLabel control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} />} label="Replace consecutive spaces, newlines and tabs" />
+              
+              <Box>
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Text Pre-processing Rules</Typography>
+                <Stack spacing={1}>
+                  <FormControlLabel 
+                    control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} />} 
+                    label="Replace consecutive spaces, newlines and tabs" 
+                  />
+                  <FormControlLabel 
+                    control={<Switch checked={deleteUrls} onChange={(_, v) => setDeleteUrls(v)} />} 
+                    label="Delete all URLs and email addresses" 
+                  />
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <FormControlLabel 
+                      control={<Switch checked={qaFormat} onChange={(_, v) => setQaFormat(v)} />} 
+                      label="Chunk using Q&A format in" 
+                    />
+                    <Select 
+                      size="small" 
+                      value={qaLanguage} 
+                      onChange={e => setQaLanguage(e.target.value)}
+                      disabled={!qaFormat}
+                      sx={{ minWidth: 100 }}
+                    >
+                      <MenuItem value="English">English</MenuItem>
+                      <MenuItem value="Chinese">Chinese</MenuItem>
+                    </Select>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>?</Typography>
+                  </Stack>
+                </Stack>
+              </Box>
+              
               <Stack direction="row" spacing={1}>
-                <Button variant="outlined">Preview Chunk</Button>
+                <Button variant="outlined" startIcon={<Typography>🔍</Typography>}>Preview Chunk</Button>
                 <Button>Reset</Button>
               </Stack>
             </Stack>

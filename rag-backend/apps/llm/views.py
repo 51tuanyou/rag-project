@@ -83,6 +83,7 @@ class ProviderViewSet(viewsets.ModelViewSet):
 class ModelCredentialViewSet(viewsets.ModelViewSet):
     queryset = ModelCredential.objects.select_related("provider").all()
     serializer_class = ModelCredentialSerializer
+    filterset_fields = ['enabled', 'model_type', 'provider']
 
     @action(detail=True, methods=["post"], url_path="toggle")
     def toggle(self, request: Request, pk: Optional[str] = None) -> Response:
