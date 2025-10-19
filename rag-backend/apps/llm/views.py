@@ -116,12 +116,17 @@ class ModelCredentialViewSet(viewsets.ModelViewSet):
                     validated["organization"] = selected_key.organization or ""
                 if not cred_base:
                     validated["base_url"] = selected_key.api_base or ""
-        # Ensure we have non-empty values
-        if not validated.get("secret") or not validated.get("base_url"):
+        # Ensure we have secret (required), but allow empty base_url/organization
+        if not validated.get("secret"):
             return Response(
-                {"detail": "Missing credentials: provide api key and base url via model or provider key."},
+                {"detail": "Missing API key: provide secret via model or provider key."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # Allow empty base_url and organization
+        if not validated.get("base_url"):
+            validated["base_url"] = None
+        if not validated.get("organization"):
+            validated["organization"] = None
 
         existing = ModelCredential.objects.filter(provider=provider, model_id=model_id).first()
         if existing:
