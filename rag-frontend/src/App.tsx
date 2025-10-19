@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -13,14 +13,21 @@ import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import { useNavigate } from 'react-router-dom'
+import Settings from '@mui/icons-material/Settings'
+import CircleIcon from '@mui/icons-material/Circle'
 
 type ChatMessage = { role: 'assistant' | 'user'; content: string }
 
 function App() {
   const navigate = useNavigate()
-  const [kb, setKb] = useState('选择知识库')
-  const [llm, setLlm] = useState('选择LLM')
-  const [chunk, setChunk] = useState('检索分块数量')
+  const [kb, setKb] = useState(() => localStorage.getItem('xenera.kb') || '请选择知识库')
+  const [llm, setLlm] = useState(() => localStorage.getItem('xenera.llm') || '请选择LLM')
+  const [chunk, setChunk] = useState(() => localStorage.getItem('xenera.chunk') || '检索分块数量')
+  const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([])
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
+  const KB_KEY = 'xenera.kb'
+  const LLM_KEY = 'xenera.llm'
+  const CHUNK_KEY = 'xenera.chunk'
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: '你好，我是 AI 助手，有什么可以帮你？' },
@@ -29,6 +36,22 @@ function App() {
 
   const [logs, setLogs] = useState<string[]>([])
   const logText = useMemo(() => logs.map((t, i) => `${i + 1}. ${t}`).join('\n'), [logs])
+
+  useEffect(() => {
+    const loadProviders = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/llm/providers/`)
+        const data = await res.json()
+        setProviders((data || []).map((p: any) => ({ id: p.id, name: p.name })))
+      } catch {}
+    }
+    loadProviders()
+  }, [])
+
+  // Persist selections to localStorage
+  useEffect(() => { localStorage.setItem(KB_KEY, kb) }, [kb])
+  useEffect(() => { localStorage.setItem(LLM_KEY, llm) }, [llm])
+  useEffect(() => { localStorage.setItem(CHUNK_KEY, chunk) }, [chunk])
 
   const onSend = () => {
     const text = compose.trim()
@@ -70,25 +93,40 @@ function App() {
           if (v === '管理知识库') { navigate('/manage/kb'); return }
           setKb(v)
         }} sx={selectSx}>
-          <MenuItem value="选择知识库">选择知识库</MenuItem>
+          <MenuItem value="请选择知识库">请选择知识库</MenuItem>
           <MenuItem value="产品库">产品库</MenuItem>
           <MenuItem value="FAQ">FAQ</MenuItem>
-          <MenuItem value="管理知识库">管理知识库</MenuItem>
+          <MenuItem value="管理知识库">
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Settings fontSize="small" />
+              <span>管理知识库</span>
+            </Stack>
+          </MenuItem>
         </Select>
         <Select size="small" value={llm} onChange={(e: SelectChangeEvent) => {
           const v = e.target.value
           if (v === '管理 LLM') { navigate('/manage/llm'); return }
           setLlm(v)
         }} sx={selectSx}>
-          <MenuItem value="选择LLM">选择LLM</MenuItem>
-          <MenuItem value="gpt-4o">gpt-4o</MenuItem>
-          <MenuItem value="qwen2.5">qwen2.5</MenuItem>
-          <MenuItem value="管理 LLM">管理 LLM</MenuItem>
+          <MenuItem value="请选择LLM">请选择LLM</MenuItem>
+          {providers.map(p => (
+            <MenuItem key={p.id} value={p.name}>{p.name}</MenuItem>
+          ))}
+          <MenuItem value="管理 LLM">
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Settings fontSize="small" />
+              <span>管理 LLM</span>
+            </Stack>
+          </MenuItem>
         </Select>
         <Select size="small" value={chunk} onChange={(e: SelectChangeEvent) => setChunk(e.target.value)} sx={selectSx}>
           <MenuItem value="检索分块数量">检索分块数量</MenuItem>
+          <MenuItem value="2">2</MenuItem>
           <MenuItem value="3">3</MenuItem>
+          <MenuItem value="4">4</MenuItem>
           <MenuItem value="5">5</MenuItem>
+          <MenuItem value="6">6</MenuItem>
+          <MenuItem value="7">7</MenuItem>
           <MenuItem value="8">8</MenuItem>
         </Select>
       </Stack>

@@ -606,7 +606,6 @@ export default function ManageLLM() {
               value={form.apiBase}
               onChange={e => setForm({ ...form, apiBase: e.target.value })}
             />
-            <Button size="small" variant="text" sx={{ alignSelf: 'flex-start' }} href="#" target="_blank">Get your API Key from OpenAI</Button>
           </Stack>
         </DialogContent>
         <DialogActions>
