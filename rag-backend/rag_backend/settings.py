@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     # Local apps
     "apps.llm",
     "apps.kb",
+    "apps.agents",
 ]
 
 MIDDLEWARE = [
