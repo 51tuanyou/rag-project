@@ -80,6 +80,11 @@ export default function ManageLLM() {
   const [addKeyOpen, setAddKeyOpen] = useState(false)
   const [addKeyProvider, setAddKeyProvider] = useState<string | null>(null)
   const [newKey, setNewKey] = useState({ apiKey: '', organization: '', apiBase: '' })
+  const [setupKeyOpen, setSetupKeyOpen] = useState(false)
+  const [setupProviderId, setSetupProviderId] = useState<string | null>(null)
+  const [setupProviderName, setSetupProviderName] = useState<string>('')
+  const [setupKeyName, setSetupKeyName] = useState<string>('')
+  const [setupForm, setSetupForm] = useState({ apiKey: '', organization: '', apiBase: '' })
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -150,12 +155,28 @@ export default function ManageLLM() {
     setDialogOpen(false)
   }
 
-  const openKeyMenu = (pid: string, el: HTMLElement) => {
+  const openKeyMenu = async (pid: string, el: HTMLElement) => {
     const prov = providers.find(p => p.id === pid)
     if (prov && prov.apiKeys.length === 0) {
       setAddKeyProvider(pid)
       setNewKey({ apiKey: '', organization: '', apiBase: '' })
       setAddKeyOpen(true)
+      return
+    }
+    // If provider has keys, open Setup dialog for the selected key
+    if (prov && (prov.selectedKey ?? 0) >= 0 && prov.apiKeys.length > 0) {
+      const keyName = prov.apiKeys[prov.selectedKey ?? 0]
+      const res = await fetch(`${API_BASE}/api/llm/providers/${pid}/keys/${encodeURIComponent(keyName)}/`)
+      const data = await res.json()
+      setSetupProviderId(pid)
+      setSetupProviderName(prov.name)
+      setSetupKeyName(keyName)
+      setSetupForm({
+        apiKey: '', // do not pre-fill secret; keep masked
+        organization: data.organization || '',
+        apiBase: data.api_base || '',
+      })
+      setSetupKeyOpen(true)
       return
     }
     setKeyMenuProvider(pid)
@@ -211,6 +232,30 @@ export default function ManageLLM() {
     })
     setAddKeyOpen(false)
     setAddKeyProvider(null)
+    await loadProviders()
+  }
+
+  const submitSetupKey = async () => {
+    if (!setupProviderId) return
+    const body: any = {}
+    if (setupForm.apiKey.trim()) body.secret = setupForm.apiKey
+    body.organization = setupForm.organization || undefined
+    body.api_base = setupForm.apiBase || undefined
+    await fetch(`${API_BASE}/api/llm/providers/${setupProviderId}/keys/${encodeURIComponent(setupKeyName)}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    setSetupKeyOpen(false)
+    await loadProviders()
+  }
+
+  const removeSetupKey = async () => {
+    if (!setupProviderId) return
+    await fetch(`${API_BASE}/api/llm/providers/${setupProviderId}/keys/${encodeURIComponent(setupKeyName)}/`, {
+      method: 'DELETE',
+    })
+    setSetupKeyOpen(false)
     await loadProviders()
   }
 
@@ -390,6 +435,40 @@ export default function ManageLLM() {
         <DialogActions>
           <Button onClick={() => setAddKeyOpen(false)}>Cancel</Button>
           <Button variant="contained" disabled={!newKey.apiKey.trim()} onClick={submitAddKey}>Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={setupKeyOpen} onClose={() => setSetupKeyOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Setup {setupProviderName.toUpperCase()}</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ mt: 0.5 }}>
+            <TextField
+              required
+              type="password"
+              label="API Key"
+              placeholder="****************"
+              value={setupForm.apiKey}
+              onChange={e => setSetupForm({ ...setupForm, apiKey: e.target.value })}
+            />
+            <TextField
+              label="Organization"
+              placeholder=""
+              value={setupForm.organization}
+              onChange={e => setSetupForm({ ...setupForm, organization: e.target.value })}
+            />
+            <TextField
+              label="API Base"
+              placeholder=""
+              value={setupForm.apiBase}
+              onChange={e => setSetupForm({ ...setupForm, apiBase: e.target.value })}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button color="error" onClick={removeSetupKey}>Remove</Button>
+          <Box sx={{ flex: 1 }} />
+          <Button onClick={() => setSetupKeyOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={submitSetupKey}>Save</Button>
         </DialogActions>
       </Dialog>
 

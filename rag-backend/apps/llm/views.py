@@ -62,10 +62,20 @@ class ProviderViewSet(viewsets.ModelViewSet):
             key.save(update_fields=["is_selected"])
         return Response(ProviderApiKeySerializer(key).data)
 
-    @action(detail=True, methods=["delete"], url_path=r"keys/(?P<name>[^/]+)")
-    def delete_key(self, request: Request, slug: Optional[str] = None, name: Optional[str] = None) -> Response:
+    @action(detail=True, methods=["get", "patch", "delete"], url_path=r"keys/(?P<name>[^/]+)")
+    def key_detail(self, request: Request, slug: Optional[str] = None, name: Optional[str] = None) -> Response:
         provider = self.get_object()
         key = get_object_or_404(ProviderApiKey, provider=provider, name=name)
+        if request.method.lower() == "get":
+            return Response(ProviderApiKeySerializer(key).data)
+        if request.method.lower() == "patch":
+            # allow updating secret/organization/api_base only
+            for field in ("secret", "organization", "api_base"):
+                if field in request.data:
+                    setattr(key, field, request.data.get(field))
+            key.save()
+            return Response(ProviderApiKeySerializer(key).data)
+        # delete
         key.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
