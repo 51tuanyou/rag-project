@@ -330,3 +330,81 @@ def get_chunk_settings(request, kb_id):
         return Response({'error': 'Knowledge base not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def get_documents(request):
+    """Get documents for a specific knowledge base"""
+    try:
+        kb_id = request.GET.get('kb_id')
+        if not kb_id:
+            return Response({'error': 'Knowledge base ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get documents for specific knowledge base
+        documents = Document.objects.filter(knowledge_base_id=kb_id).select_related('knowledge_base', 'knowledge_base__chunk_settings')
+        
+        document_list = []
+        for doc in documents:
+            # Calculate word count from chunks
+            word_count = sum(chunk.word_count for chunk in doc.chunks.all())
+            chunk_count = doc.chunks.count()
+            
+            # Get chunking mode from database
+            chunking_mode = 'GENERAL'
+            if doc.knowledge_base.chunk_settings:
+                if doc.knowledge_base.chunk_settings.chunk_type == 'qa':
+                    chunking_mode = 'Q&A'
+                elif doc.knowledge_base.chunk_settings.delimiter != '\\n\\n':
+                    chunking_mode = 'CUSTOM'
+            
+            document_list.append({
+                'id': doc.id,
+                'file_name': doc.file_name,
+                'file_path': doc.file_path,
+                'file_type': doc.file_type,
+                'file_size': doc.file_size,
+                'chunking_mode': chunking_mode,
+                'word_count': f"{word_count:,}",
+                'chunk_count': chunk_count,
+                'retrieval_count': 0,  # TODO: Implement retrieval count tracking
+                'upload_time': doc.uploaded_at.strftime('%Y/%m/%d %H:%M:%S'),
+                'status': doc.status,
+                'knowledge_base_id': doc.knowledge_base.id,
+                'knowledge_base_name': doc.knowledge_base.name
+            })
+        
+        return Response({
+            'documents': document_list,
+            'total': len(document_list),
+            'knowledge_base_id': int(kb_id)
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PATCH'])
+def update_document_status(request, doc_id):
+    """Update document status (enable/disable)"""
+    try:
+        data = request.data
+        new_status = data.get('status')
+        
+        if new_status not in ['completed', 'disabled']:
+            return Response({'error': 'Invalid status. Must be "completed" or "disabled"'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            document = Document.objects.get(id=doc_id)
+        except Document.DoesNotExist:
+            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        document.status = new_status
+        document.save()
+        
+        return Response({
+            'id': document.id,
+            'file_name': document.file_name,
+            'status': document.status,
+            'message': f'Document status updated to {new_status}'
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -94,6 +94,7 @@ class Chunk(models.Model):
     chunk_id = models.CharField(max_length=100)
     content = models.TextField()
     characters = models.IntegerField()
+    word_count = models.IntegerField(default=0, help_text="Word count of this chunk")
     chunk_number = models.IntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
     

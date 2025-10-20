@@ -241,7 +241,7 @@ export default function KBProcessing() {
 
       <Stack direction="row" spacing={1}>
         <Box sx={{ flex: 1 }} />
-        <Button variant="contained" onClick={() => navigate('/manage/kb/documents', { state: { files } })}>Go to document</Button>
+        <Button variant="contained" onClick={() => navigate(`/manage/kb/documents/${knowledgeBaseId}`, { state: { files } })}>Go to document</Button>
       </Stack>
       </Box>
     </Box>

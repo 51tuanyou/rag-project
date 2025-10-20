@@ -13,4 +13,6 @@ urlpatterns = [
     path('create-knowledge-base/', views.create_knowledge_base, name='create-knowledge-base'),
     path('check-knowledge-base-name/', views.check_knowledge_base_name, name='check-knowledge-base-name'),
     path('get-chunk-settings/<int:kb_id>/', views.get_chunk_settings, name='get-chunk-settings'),
+    path('get-documents/', views.get_documents, name='get-documents'),
+    path('update-document-status/<int:doc_id>/', views.update_document_status, name='update-document-status'),
 ]

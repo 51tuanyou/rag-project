@@ -17,7 +17,7 @@ const router = createBrowserRouter([
   { path: '/manage/kb/upload', element: <KBUpload /> },
   { path: '/manage/kb/chunk', element: <KBChunkSettings /> },
   { path: '/manage/kb/processing', element: <KBProcessing /> },
-  { path: '/manage/kb/documents', element: <KBDocuments /> },
+  { path: '/manage/kb/documents/:kbId', element: <KBDocuments /> },
   { path: '/manage/kb/documents/:id', element: <KBDocumentDetail /> },
   { path: '/manage/llm', element: <ManageLLM /> },
 ])
