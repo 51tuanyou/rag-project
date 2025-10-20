@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, useEffect } from 'react'
 import {
   Box,
   Button,
@@ -17,16 +17,34 @@ import UploadFileIcon from '@mui/icons-material/UploadFile'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 
 type FileItem = { id: string; file: File; uploadedPath?: string }
 
 export default function KBUpload() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [files, setFiles] = useState<FileItem[]>([])
   const [uploading, setUploading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
+
+  // Restore files from location.state when coming back from chunk page
+  useEffect(() => {
+    const stateFiles = location.state?.files as string[] | undefined
+    if (stateFiles && stateFiles.length > 0) {
+      // Convert file paths back to FileItem objects
+      const restoredFiles: FileItem[] = stateFiles.map((filePath, index) => {
+        const fileName = filePath.includes('/') ? filePath.split('/').pop() : filePath.split('\\').pop()
+        return {
+          id: `restored-${index}-${fileName}`,
+          file: new File([''], fileName || 'unknown', { type: 'application/octet-stream' }),
+          uploadedPath: filePath
+        }
+      })
+      setFiles(restoredFiles)
+    }
+  }, [location.state])
 
   const onFiles = useCallback(async (fileList: FileList | null) => {
     if (!fileList) return

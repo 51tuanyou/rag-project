@@ -98,8 +98,11 @@ function App() {
           <MenuItem value="FAQ">FAQ</MenuItem>
           <MenuItem value="管理知识库">
             <Stack direction="row" spacing={1} alignItems="center">
-              <Settings fontSize="small" />
-              <span>管理知识库</span>
+              <Settings fontSize="small" sx={{ color: 'primary.main' }} />
+              <Typography color="primary.main">管理知识库</Typography>
+              <Typography variant="caption" color="primary.main">
+                →
+              </Typography>
             </Stack>
           </MenuItem>
         </Select>
@@ -114,8 +117,11 @@ function App() {
           ))}
           <MenuItem value="管理 LLM">
             <Stack direction="row" spacing={1} alignItems="center">
-              <Settings fontSize="small" />
-              <span>管理 LLM</span>
+              <Settings fontSize="small" sx={{ color: 'primary.main' }} />
+              <Typography color="primary.main">管理 LLM</Typography>
+              <Typography variant="caption" color="primary.main">
+                →
+              </Typography>
             </Stack>
           </MenuItem>
         </Select>

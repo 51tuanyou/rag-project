@@ -70,6 +70,118 @@ export default function KBChunkSettings() {
   const [scoreEnabled, setScoreEnabled] = useState(() => localStorage.getItem('kb.scoreEnabled') === 'true')
   const [score, setScore] = useState(() => parseFloat(localStorage.getItem('kb.score') || '0.5'))
   const [hybridStrategy, setHybridStrategy] = useState<'weighted' | 'rerank'>(() => (localStorage.getItem('kb.hybridStrategy') as 'weighted' | 'rerank') || 'rerank')
+  
+  // Validation state
+  const [validationError, setValidationError] = useState<string>('')
+
+  // Validation function
+  const validateBeforeNavigation = () => {
+    setValidationError('')
+    
+    // Check if files are available
+    if (!files || files.length === 0) {
+      setValidationError('Please upload documents first to continue processing')
+      return false
+    }
+    
+    // Check if embedding model is selected
+    if (!embedding) {
+      setValidationError('Please select an embedding model to continue processing')
+      return false
+    }
+    
+    return true
+  }
+
+  // Generate knowledge name: filename - embedding model name - file extension
+  const generateKnowledgeName = async (filePath: string, embeddingModel: string) => {
+    // Extract only the filename from the path (handle both / and \ separators)
+    const fileName = filePath.includes('/') ? filePath.split('/').pop() : 
+                    filePath.includes('\\') ? filePath.split('\\').pop() : filePath
+    const nameWithoutExt = fileName.split('.')[0]
+    const extension = fileName.includes('.') ? fileName.split('.').pop() : ''
+    
+    // Generate base name
+    const baseName = `${nameWithoutExt}-${embeddingModel}${extension ? '.' + extension : ''}`
+    
+    // Check for duplicates and add auto-increment ID if needed
+    let finalName = baseName
+    let counter = 1
+    
+    // Check if this name already exists in database
+    const checkNameExists = async (name: string) => {
+      try {
+        const response = await fetch(`${API_BASE}/api/kb/check-knowledge-base-name/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name })
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to check name')
+        }
+        
+        const data = await response.json()
+        return data.exists
+      } catch (error) {
+        console.error('Error checking name:', error)
+        return false // If check fails, assume name is available
+      }
+    }
+    
+    while (await checkNameExists(finalName)) {
+      finalName = `${nameWithoutExt}-${embeddingModel}（${counter}）${extension ? '.' + extension : ''}`
+      counter++
+    }
+    
+    return finalName
+  }
+
+  // Handle navigation with validation
+  const handleSaveAndProcess = async () => {
+    if (!validateBeforeNavigation()) {
+      return
+    }
+    
+    let knowledgeName = 'knowledge'
+    
+    if (files[0] && embedding?.label) {
+      try {
+        knowledgeName = await generateKnowledgeName(files[0], embedding.label)
+      } catch (error) {
+        console.error('Error generating knowledge name:', error)
+        // Fallback to simple name generation
+        const fileName = files[0].includes('/') ? files[0].split('/').pop() : files[0].split('\\').pop()
+        knowledgeName = fileName?.split('.')[0] || 'knowledge'
+      }
+    } else if (files[0]) {
+      const fileName = files[0].includes('/') ? files[0].split('/').pop() : files[0].split('\\').pop()
+      knowledgeName = fileName?.split('.')[0] || 'knowledge'
+    }
+    
+    navigate('/manage/kb/processing', { state: {
+      files,
+      knowledgeName,
+      delimiter,
+      maxLen,
+      replaceSpaces,
+      indexMethod,
+      retrievalMode,
+      embeddingModel: embedding?.label || 'default',
+      embeddingModelId: embedding?.id || null,
+      overlap,
+      deleteUrls,
+      qaFormat,
+      qaLanguage,
+      questionFlag,
+      answerFlag,
+      qaMaxLength,
+      // Pass preview chunks if they exist
+      previewChunks: showPreview && chunks.length > 0 ? chunks : null,
+    } })
+  }
 
   // Load embedding models from backend
   useEffect(() => {
@@ -84,12 +196,27 @@ export default function KBChunkSettings() {
           label: model.model_name,
           tags: ['TEXT EMBEDDING']
         }))
-        setEmbeddingOptions(groupedModels)
-        if (groupedModels.length > 0) {
+        
+        // Add management option
+        const hasModels = groupedModels.length > 0
+        const managementOption = {
+          id: 'manage-llm',
+          // Only show the group header "No Embedding Models Configured" when there are no models
+          provider: hasModels ? '' : 'No Embedding Models Configured',
+          label: 'Manage LLM',
+          tags: ['MANAGEMENT'],
+          isManagement: true
+        }
+
+        // When there are models, append Manage LLM at the end without the warning group header
+        setEmbeddingOptions(hasModels ? [...groupedModels, managementOption] : [managementOption])
+        if (hasModels) {
           // Try to restore from localStorage first
           const savedEmbeddingId = localStorage.getItem('kb.embeddingId')
           const savedEmbedding = savedEmbeddingId ? groupedModels.find(m => m.id === savedEmbeddingId) : null
           setEmbedding(savedEmbedding || groupedModels[0])
+        } else {
+          setEmbedding(null)
         }
       } catch (error) {
         console.error('Failed to load embedding models:', error)
@@ -173,6 +300,8 @@ export default function KBChunkSettings() {
       const data = await response.json()
       setChunks(data.chunks || [])
       setShowPreview(true)
+      // Reset pagination to first page when previewing chunks
+      setCurrentPage(1)
     } catch (error) {
       console.error('Failed to preview chunks:', error)
     }
@@ -275,6 +404,8 @@ export default function KBChunkSettings() {
       setGeneralExpanded(true)
       setQaExpanded(false)
     }
+    // Reset pagination when switching between settings
+    setCurrentPage(1)
   }
 
   const toggleQa = () => {
@@ -287,6 +418,8 @@ export default function KBChunkSettings() {
       setQaExpanded(true)
       setGeneralExpanded(false)
     }
+    // Reset pagination when switching between settings
+    setCurrentPage(1)
   }
 
   // Load chunks from localStorage on component mount
@@ -631,7 +764,10 @@ export default function KBChunkSettings() {
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-            <Typography variant="subtitle1" fontWeight={600}>Embedding Model</Typography>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+              <Typography variant="subtitle1" fontWeight={600}>Embedding Model</Typography>
+              <Typography variant="caption" color="error.main" sx={{ fontWeight: 600 }}>*</Typography>
+            </Stack>
             <Divider sx={{ my: 1 }} />
             <Autocomplete
               sx={{ width: 360 }}
@@ -639,13 +775,29 @@ export default function KBChunkSettings() {
               groupBy={(o) => o.provider}
               getOptionLabel={(o) => o.label}
               value={embedding}
-              onChange={(_, v) => setEmbedding(v)}
+              onChange={(_, v) => {
+                if (v && v.isManagement) {
+                  // Navigate to LLM management page
+                  navigate('/manage/llm')
+                } else {
+                  setEmbedding(v)
+                }
+              }}
               onHighlightChange={(_, v) => setHighlighted(v)}
-              renderInput={(params) => <TextField {...params} size="small" placeholder="Search model" />}
+              renderInput={(params) => <TextField {...params} size="small" placeholder="Please select an embedding model" />}
               renderOption={(props, option) => (
                 <li {...props} key={option.id} style={{ position: 'relative' }}>
-                  <Typography>{option.label}</Typography>
-                  {highlighted?.id === option.id && (
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography color={option.isManagement ? 'primary.main' : 'inherit'}>
+                      {option.label}
+                    </Typography>
+                    {option.isManagement && (
+                      <Typography variant="caption" color="primary.main">
+                        →
+                      </Typography>
+                    )}
+                  </Stack>
+                  {highlighted?.id === option.id && !option.isManagement && (
                     <Paper elevation={3} style={{ position: 'absolute', left: 'calc(100% + 8px)', top: 0, width: 240, padding: 12 }}>
                       <Typography fontWeight={600}>{option.label}</Typography>
                       <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
@@ -769,20 +921,21 @@ export default function KBChunkSettings() {
             </Paper>
 
             <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-              <Button variant="outlined" onClick={() => navigate(-1)} startIcon={<ArrowBackIcon />}>
+              <Button variant="outlined" onClick={() => navigate('/manage/kb/upload', { state: { files } })} startIcon={<ArrowBackIcon />}>
                 Previous step
               </Button>
               <Box sx={{ flex: 1 }} />
-              <Button variant="contained" onClick={() => navigate('/manage/kb/processing', { state: {
-                files,
-                knowledgeName: files[0] || 'knowledge',
-                delimiter,
-                maxLen,
-                replaceSpaces,
-                indexMethod,
-                retrievalMode,
-              } })}>Save & Process</Button>
+              <Button variant="contained" onClick={handleSaveAndProcess}>Save & Process</Button>
             </Stack>
+            
+            {/* Validation error display */}
+            {validationError && (
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'error.light', borderRadius: 1, border: '1px solid', borderColor: 'error.main' }}>
+                <Typography variant="body2" color="error.main" sx={{ fontWeight: 600 }}>
+                  {validationError}
+                </Typography>
+              </Box>
+            )}
           </Paper>
         </Box>
 

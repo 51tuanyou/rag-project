@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import {
   Box,
   Button,
@@ -20,15 +20,163 @@ export default function KBProcessing() {
   const navigate = useNavigate()
   const { state } = useLocation() as { state?: any }
   const files: string[] = useMemo(() => state?.files ?? [], [state])
-  const [name, setName] = useState(state?.knowledgeName || (files[0] ? files[0].split('.')[0] : 'knowledge'))
-  const [completed] = useState(true)
+  
+  // Generate knowledge name: filename - embedding model name - file extension
+  const generateKnowledgeName = async (filePath: string, embeddingModel: string) => {
+    // Extract only the filename from the path (handle both / and \ separators)
+    const fileName = filePath.includes('/') ? filePath.split('/').pop() : 
+                    filePath.includes('\\') ? filePath.split('\\').pop() : filePath
+    const nameWithoutExt = fileName.split('.')[0]
+    const extension = fileName.includes('.') ? fileName.split('.').pop() : ''
+    
+    // Generate base name
+    const baseName = `${nameWithoutExt}-${embeddingModel}${extension ? '.' + extension : ''}`
+    
+    // Check for duplicates and add auto-increment ID if needed
+    let finalName = baseName
+    let counter = 1
+    
+    // Check if this name already exists in database
+    const checkNameExists = async (name: string) => {
+      try {
+        const response = await fetch(`${API_BASE}/api/kb/check-knowledge-base-name/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name })
+        })
+        
+        if (!response.ok) {
+          throw new Error('Failed to check name')
+        }
+        
+        const data = await response.json()
+        return data.exists
+      } catch (error) {
+        console.error('Error checking name:', error)
+        return false // If check fails, assume name is available
+      }
+    }
+    
+    while (await checkNameExists(finalName)) {
+      finalName = `${nameWithoutExt}-${embeddingModel}（${counter}）${extension ? '.' + extension : ''}`
+      counter++
+    }
+    
+    return finalName
+  }
+  
+  const [name, setName] = useState(() => {
+    if (state?.knowledgeName) {
+      return state.knowledgeName
+    }
+    if (files[0] && state?.embeddingModel) {
+      return generateKnowledgeName(files[0], state.embeddingModel)
+    }
+    // Since embedding model is now required, this fallback should not be reached
+    if (files[0]) {
+      const fileName = files[0].includes('/') ? files[0].split('/').pop() : 
+                      files[0].includes('\\') ? files[0].split('\\').pop() : files[0]
+      return fileName.split('.')[0]
+    }
+    return 'knowledge'
+  })
+  const [completed, setCompleted] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [creationError, setCreationError] = useState<string>('')
+  const [knowledgeBaseId, setKnowledgeBaseId] = useState<number | null>(null)
+  const hasInitiatedCreation = useRef(false)
+  const [chunkSettings, setChunkSettings] = useState<any>(null)
+  
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
+
+  // Fetch chunk settings from knowledge base
+  const fetchChunkSettings = async (kbId: number) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/kb/get-chunk-settings/${kbId}/`)
+      if (response.ok) {
+        const data = await response.json()
+        setChunkSettings(data)
+      }
+    } catch (error) {
+      console.error('Error fetching chunk settings:', error)
+    }
+  }
+
+  // Create knowledge base in database
+  const createKnowledgeBase = async () => {
+    if (isCreating) return
+    
+    setIsCreating(true)
+    setCreationError('')
+    
+    try {
+      const requestData = {
+        name: name,
+        files: files,
+        settings: {
+          delimiter: state?.delimiter ?? '\\n\\n',
+          max_length: parseInt(state?.maxLen ?? '1024'),
+          overlap: parseInt(state?.overlap ?? '50'),
+          replace_spaces: state?.replaceSpaces ?? true,
+          delete_urls: state?.deleteUrls ?? false,
+          qa_format: state?.qaFormat ?? false,
+          qa_language: state?.qaLanguage ?? 'English',
+          question_flag: state?.questionFlag ?? 'Q: ',
+          answer_flag: state?.answerFlag ?? 'A: ',
+          qa_max_length: parseInt(state?.qaMaxLength ?? '1024'),
+          index_method: state?.indexMethod ?? 'hq',
+          retrieval_mode: state?.retrievalMode ?? 'vector'
+        },
+        embedding_model_id: state?.embeddingModelId || null,
+        // Pass preview chunks if they exist
+        preview_chunks: state?.previewChunks || null
+      }
+      
+      const response = await fetch(`${API_BASE}/api/kb/create-knowledge-base/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData)
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create knowledge base')
+      }
+      
+      const result = await response.json()
+      setKnowledgeBaseId(result.knowledge_base_id)
+      setCompleted(true)
+      
+      // Fetch chunk settings from the created knowledge base
+      await fetchChunkSettings(result.knowledge_base_id)
+      
+    } catch (error) {
+      console.error('Error creating knowledge base:', error)
+      setCreationError(error instanceof Error ? error.message : 'Failed to create knowledge base')
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
+  // Auto-create knowledge base when component mounts
+  useEffect(() => {
+    if (files.length > 0 && !isCreating && !completed && !knowledgeBaseId && !hasInitiatedCreation.current) {
+      console.log('Creating knowledge base...')
+      hasInitiatedCreation.current = true
+      createKnowledgeBase()
+    }
+  }, [files, isCreating, completed, knowledgeBaseId])
 
   const settings = {
-    chunkingSetting: state?.delimiter ? 'Custom' : 'General',
-    maxLen: state?.maxLen ?? '1024',
-    preprocess: state?.replaceSpaces ? 'Replace consecutive spaces, newlines and tabs' : '—',
-    indexMethod: state?.indexMethod === 'hq' ? 'High Quality' : 'Economical',
-    retrieval: (state?.retrievalMode || 'vector').replace(/\b\w/g, (s: string) => s.toUpperCase()) + ' Search',
+    chunkingSetting: chunkSettings?.chunk_type === 'qa' ? 'Using Q&A' : (chunkSettings?.delimiter ? 'Custom' : 'General'),
+    maxLen: chunkSettings?.max_length?.toString() ?? state?.maxLen ?? '1024',
+    preprocess: chunkSettings?.replace_spaces ? 'Replace consecutive spaces, newlines and tabs' : '—',
+    indexMethod: chunkSettings?.index_method === 'hq' ? 'High Quality' : 'Economical',
+    retrieval: (chunkSettings?.retrieval_mode || state?.retrievalMode || 'vector').replace(/\b\w/g, (s: string) => s.toUpperCase()) + ' Search',
   }
 
   return (
@@ -50,19 +198,35 @@ export default function KBProcessing() {
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>{completed ? 'EMBEDDING COMPLETED' : 'EMBEDDING PROCESSING...'}</Typography>
-        {files.map((f, i) => (
-          <Stack key={f + i} direction="row" spacing={1} alignItems="center" sx={{ mb: 1, p: 1, borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
-            <InsertDriveFileIcon fontSize="small" />
-            <Typography sx={{ flex: 1 }}>{f}</Typography>
-            {completed ? (
-              <CheckCircleIcon sx={{ color: 'success.main' }} />
-            ) : (
-              <Typography variant="caption">0%</Typography>
-            )}
-          </Stack>
-        ))}
-        {!completed && <LinearProgress variant="indeterminate" />}
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>
+          {isCreating ? 'CREATING KNOWLEDGE BASE...' : completed ? 'EMBEDDING COMPLETED' : 'EMBEDDING PROCESSING...'}
+        </Typography>
+        {files.map((f, i) => {
+          // Extract only the filename from the path (handle both / and \ separators)
+          const fileName = f.includes('/') ? f.split('/').pop() : 
+                          f.includes('\\') ? f.split('\\').pop() : f
+          return (
+            <Stack key={f + i} direction="row" spacing={1} alignItems="center" sx={{ mb: 1, p: 1, borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+              <InsertDriveFileIcon fontSize="small" />
+              <Typography sx={{ flex: 1 }}>{fileName}</Typography>
+              {completed ? (
+                <CheckCircleIcon sx={{ color: 'success.main' }} />
+              ) : (
+                <Typography variant="caption">0%</Typography>
+              )}
+            </Stack>
+          )
+        })}
+        {(isCreating || !completed) && <LinearProgress variant="indeterminate" />}
+        
+        {/* Error display */}
+        {creationError && (
+          <Box sx={{ mt: 2, p: 2, bgcolor: 'error.light', borderRadius: 1, border: '1px solid', borderColor: 'error.main' }}>
+            <Typography variant="body2" color="error.main" sx={{ fontWeight: 600 }}>
+              Error: {creationError}
+            </Typography>
+          </Box>
+        )}
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
@@ -76,7 +240,6 @@ export default function KBProcessing() {
       </Paper>
 
       <Stack direction="row" spacing={1}>
-        <Button variant="outlined">Access the API</Button>
         <Box sx={{ flex: 1 }} />
         <Button variant="contained" onClick={() => navigate('/manage/kb/documents', { state: { files } })}>Go to document</Button>
       </Stack>
