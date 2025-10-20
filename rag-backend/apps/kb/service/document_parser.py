@@ -52,13 +52,28 @@ class DocumentParser:
                 pdf_reader = PyPDF2.PdfReader(file)
                 text_content = []
                 
-                for page in pdf_reader.pages:
-                    page_text = page.extract_text()
-                    if page_text.strip():
-                        text_content.append(page_text.strip())
+                print(f"PDF has {len(pdf_reader.pages)} pages")
                 
-                return '\n\n'.join(text_content)
+                for i, page in enumerate(pdf_reader.pages):
+                    try:
+                        page_text = page.extract_text()
+                        if page_text and page_text.strip():
+                            text_content.append(page_text.strip())
+                            print(f"Page {i+1}: {len(page_text)} characters")
+                        else:
+                            print(f"Page {i+1}: No text content")
+                    except Exception as page_error:
+                        print(f"Error extracting text from page {i+1}: {str(page_error)}")
+                        continue
+                
+                if not text_content:
+                    raise Exception("No text content found in PDF")
+                
+                result = '\n\n'.join(text_content)
+                print(f"Total extracted text: {len(result)} characters")
+                return result
         except Exception as e:
+            print(f"PDF parsing error: {str(e)}")
             raise Exception(f"Error parsing PDF file: {str(e)}")
     
     def _parse_txt(self, file_path: str) -> str:

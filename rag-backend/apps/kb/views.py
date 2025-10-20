@@ -68,6 +68,9 @@ def preview_chunks(request):
         })
     
     except Exception as e:
+        import traceback
+        print(f"Error in preview_chunks: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
