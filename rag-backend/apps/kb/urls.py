@@ -16,4 +16,13 @@ urlpatterns = [
     path('get-documents/', views.get_documents, name='get-documents'),
     path('update-document-status/<int:doc_id>/', views.update_document_status, name='update-document-status'),
     path('get-knowledge-bases/', views.get_knowledge_bases, name='get-knowledge-bases'),
+    path('update-knowledge-base/<int:kb_id>/', views.update_knowledge_base, name='update-knowledge-base'),
+    # Tag-related URLs
+    path('get-tags/', views.get_tags, name='get-tags'),
+    path('create-tag/', views.create_tag, name='create-tag'),
+    path('update-tag/<int:tag_id>/', views.update_tag, name='update-tag'),
+    path('delete-tag/<int:tag_id>/', views.delete_tag, name='delete-tag'),
+    path('get-kb-tags/<int:kb_id>/', views.get_kb_tags, name='get-kb-tags'),
+    path('add-tag-to-kb/<int:kb_id>/', views.add_tag_to_kb, name='add-tag-to-kb'),
+    path('remove-tag-from-kb/<int:kb_id>/<int:tag_id>/', views.remove_tag_from_kb, name='remove-tag-from-kb'),
 ]

@@ -259,7 +259,12 @@ export default function KBDocuments() {
                         disabled={updatingStatus === doc.id}
                         onChange={() => handleStatusToggle(doc.id, doc.status)}
                       />
-                      <IconButton size="small"><Settings /></IconButton>
+                      <IconButton 
+                        size="small"
+                        onClick={() => navigate(`/manage/kb/chunk-settings/${kbId}`)}
+                      >
+                        <Settings />
+                      </IconButton>
                       <IconButton size="small"><MoreVert /></IconButton>
                     </Stack>
                   </TableCell>

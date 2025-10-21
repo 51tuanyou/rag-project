@@ -21,11 +21,12 @@ import {
 import Autocomplete from '@mui/material/Autocomplete'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 export default function KBChunkSettings() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { kbId } = useParams<{ kbId: string }>()
   const files: string[] = useMemo(() => (location.state?.files ?? []) as string[], [location.state])
 
   const [delimiter, setDelimiter] = useState(() => {
@@ -48,11 +49,45 @@ export default function KBChunkSettings() {
   const [chunks, setChunks] = useState<Array<{id: string; content: string; characters: number}>>([])
   const [showPreview, setShowPreview] = useState(false)
   const [editingChunk, setEditingChunk] = useState<string | null>(null)
+  
+  // Document-related state
+  const [documents, setDocuments] = useState<Array<{id: number; file_name: string; file_path: string}>>([])
+  const [selectedDocument, setSelectedDocument] = useState<number | null>(null)
+  const [loadingDocuments, setLoadingDocuments] = useState(false)
   const [newChunkContent, setNewChunkContent] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(5)
   const [generalExpanded, setGeneralExpanded] = useState(true)
   const [qaExpanded, setQaExpanded] = useState(false)
+
+  // Fetch documents for the knowledge base
+  const fetchDocuments = async () => {
+    if (!kbId) return
+    
+    setLoadingDocuments(true)
+    try {
+      const response = await fetch(`http://localhost:8000/api/kb/get-documents/?kb_id=${kbId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setDocuments(data.documents || [])
+        // Auto-select first document if available
+        if (data.documents && data.documents.length > 0) {
+          setSelectedDocument(data.documents[0].id)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching documents:', error)
+    } finally {
+      setLoadingDocuments(false)
+    }
+  }
+
+  // Fetch documents when component mounts and kbId is available
+  useEffect(() => {
+    if (kbId) {
+      fetchDocuments()
+    }
+  }, [kbId])
   
   // Q&A specific settings
   const [questionFlag, setQuestionFlag] = useState(() => localStorage.getItem('kb.questionFlag') || 'Q: ')
@@ -284,12 +319,20 @@ export default function KBChunkSettings() {
         }
       }
       
-      // Use the first uploaded file from the previous step
-      if (files.length === 0) {
-        console.error('No files available for processing')
+      // Use the selected document from the database
+      if (!selectedDocument) {
+        console.error('No document selected for processing')
         return
       }
-      const filePath = files[0]
+      
+      // Find the selected document
+      const selectedDoc = documents.find(doc => doc.id === selectedDocument)
+      if (!selectedDoc) {
+        console.error('Selected document not found')
+        return
+      }
+      
+      const filePath = selectedDoc.file_path
       
       const response = await fetch(`${API_BASE}/api/kb/preview-chunks/`, {
         method: 'POST',
@@ -544,8 +587,12 @@ export default function KBChunkSettings() {
         </Typography>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
         <Typography variant="h6">Chunk Settings</Typography>
-        <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
-          返回管理知识库
+        <Button 
+          variant="outlined" 
+          onClick={() => navigate(kbId ? `/manage/kb/documents/${kbId}` : '/manage/kb')} 
+          startIcon={<ArrowBackIcon />}
+        >
+          {kbId ? '返回文档管理' : '返回管理知识库'}
         </Button>
       </Stack>
       <Stack direction="row" spacing={2}>
@@ -943,15 +990,24 @@ export default function KBChunkSettings() {
           <Paper variant="outlined" sx={{ p: 2 }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
               <Typography variant="subtitle2" fontWeight={600}>PREVIEW</Typography>
-              <Select size="small" value={files[0] ?? ''} sx={{ minWidth: 200 }}>
-                {files.map(f => {
-                  const fileName = f.includes('/') ? f.split('/').pop() : f
-                  return <MenuItem key={f} value={f}>{fileName}</MenuItem>
-                })}
+              <Select 
+                size="small" 
+                value={selectedDocument || ''} 
+                onChange={(e) => setSelectedDocument(Number(e.target.value))}
+                sx={{ minWidth: 200 }}
+                disabled={loadingDocuments}
+              >
+                {documents.map(doc => (
+                  <MenuItem key={doc.id} value={doc.id}>
+                    {doc.file_name}
+                  </MenuItem>
+                ))}
               </Select>
             </Stack>
             <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-              {showPreview ? `${chunks.length} ESTIMATED CHUNKS` : `${files.length} preprocess documents`}
+              {showPreview ? `${chunks.length} ESTIMATED CHUNKS` : 
+               loadingDocuments ? 'Loading documents...' : 
+               `${documents.length} documents available`}
             </Typography>
             
             {showPreview ? (

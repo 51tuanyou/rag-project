@@ -106,3 +106,33 @@ class Chunk(models.Model):
     
     def __str__(self):
         return f"Chunk {self.chunk_number} of {self.document.file_name}"
+
+
+class Tag(models.Model):
+    """Tag model for categorizing knowledge bases"""
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('inactive', 'Inactive'),
+    ]
+    
+    name = models.CharField(max_length=100, help_text="Tag name")
+    description = models.TextField(blank=True, null=True, help_text="Tag description")
+    color = models.CharField(max_length=7, default='#1976d2', help_text="Tag color in hex format")
+    knowledge_base = models.ForeignKey(KnowledgeBase, on_delete=models.CASCADE, related_name='tags', help_text="Knowledge base this tag belongs to")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='active', help_text="Tag status: active or inactive")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    
+    class Meta:
+        db_table = 'kb_tag'
+        verbose_name = 'Tag'
+        verbose_name_plural = 'Tags'
+        ordering = ['name']
+        unique_together = ['name', 'knowledge_base']
+    
+    def __str__(self):
+        return self.name
+
+
+# KnowledgeBaseTag model is no longer needed since Tag now directly belongs to KnowledgeBase

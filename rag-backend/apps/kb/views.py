@@ -6,7 +6,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .service.chunking_service import ChunkingService
 from .service.document_parser import DocumentParser
-from .models import ChunkSettings, KnowledgeBase, Document, Chunk
+from .models import ChunkSettings, KnowledgeBase, Document, Chunk, Tag
 from apps.llm.models import ModelCredential
 import os
 import tempfile
@@ -422,6 +422,9 @@ def get_knowledge_bases(request):
             # Count documents for this knowledge base
             document_count = kb.documents.count()
             
+            # Count available documents (status = 'completed')
+            available_document_count = kb.documents.filter(status='completed').count()
+            
             # Get chunking mode from database
             chunking_mode = 'GENERAL'
             if kb.chunk_settings:
@@ -451,6 +454,7 @@ def get_knowledge_bases(request):
                 'name': kb.name,
                 'description': kb.description or '',
                 'document_count': document_count,
+                'available_document_count': available_document_count,
                 'chunking_mode': chunking_mode,
                 'retrieval_mode': retrieval_mode_display,
                 'index_method': index_method_display,
@@ -463,6 +467,298 @@ def get_knowledge_bases(request):
         return Response({
             'knowledge_bases': kb_list,
             'total': len(kb_list)
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+def update_knowledge_base(request, kb_id):
+    """Update a knowledge base"""
+    try:
+        data = request.data
+        
+        # Get the knowledge base
+        try:
+            kb = KnowledgeBase.objects.get(id=kb_id)
+        except KnowledgeBase.DoesNotExist:
+            return Response({'error': 'Knowledge base not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Update fields
+        if 'name' in data:
+            kb.name = data['name']
+        
+        if 'description' in data:
+            kb.description = data['description']
+        
+        # Save the changes
+        kb.save()
+        
+        return Response({
+            'id': kb.id,
+            'name': kb.name,
+            'description': kb.description,
+            'updated_at': kb.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'message': 'Knowledge base updated successfully'
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Tag-related API endpoints
+
+@api_view(['GET'])
+def get_tags(request):
+    """Get all tags with optional search"""
+    try:
+        search_query = request.GET.get('search', '')
+        
+        if search_query:
+            tags = Tag.objects.filter(name__icontains=search_query)
+        else:
+            tags = Tag.objects.all()
+        
+        tag_list = []
+        for tag in tags:
+            # Count how many knowledge bases use this tag (now just 1 since tag belongs to one KB)
+            kb_count = 1
+            
+            tag_list.append({
+                'id': tag.id,
+                'name': tag.name,
+                'description': tag.description or '',
+                'color': tag.color,
+                'status': tag.status,
+                'knowledge_base': tag.knowledge_base.id if tag.knowledge_base else None,
+                'kb_count': kb_count,
+                'created_at': tag.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'created_by': tag.created_by.username if tag.created_by else None
+            })
+        
+        return Response({
+            'tags': tag_list,
+            'total': len(tag_list)
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def create_tag(request):
+    """Create a new tag"""
+    try:
+        data = request.data
+        
+        name = data.get('name', '').strip()
+        description = data.get('description', '').strip()
+        color = data.get('color', '#1976d2')
+        knowledge_base_id = data.get('knowledge_base_id')
+        
+        if not name:
+            return Response({'error': 'Tag name is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not knowledge_base_id:
+            return Response({'error': 'Knowledge base ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get the knowledge base
+        try:
+            knowledge_base = KnowledgeBase.objects.get(id=knowledge_base_id)
+        except KnowledgeBase.DoesNotExist:
+            return Response({'error': 'Knowledge base not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if tag already exists in this knowledge base
+        if Tag.objects.filter(name=name, knowledge_base=knowledge_base).exists():
+            return Response({'error': 'Tag with this name already exists in this knowledge base'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        tag = Tag.objects.create(
+            name=name,
+            description=description,
+            color=color,
+            knowledge_base=knowledge_base
+        )
+        
+        return Response({
+            'id': tag.id,
+            'name': tag.name,
+            'description': tag.description,
+            'color': tag.color,
+            'created_at': tag.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'message': 'Tag created successfully'
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+def update_tag(request, tag_id):
+    """Update a tag"""
+    try:
+        data = request.data
+        
+        try:
+            tag = Tag.objects.get(id=tag_id)
+        except Tag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Update fields
+        if 'name' in data:
+            new_name = data['name'].strip()
+            if new_name and new_name != tag.name:
+                # Check if new name already exists
+                if Tag.objects.filter(name=new_name).exclude(id=tag_id).exists():
+                    return Response({'error': 'Tag with this name already exists'}, status=status.HTTP_400_BAD_REQUEST)
+                tag.name = new_name
+        
+        if 'description' in data:
+            tag.description = data['description'].strip()
+        
+        if 'color' in data:
+            tag.color = data['color']
+        
+        tag.save()
+        
+        return Response({
+            'id': tag.id,
+            'name': tag.name,
+            'description': tag.description,
+            'color': tag.color,
+            'updated_at': tag.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'message': 'Tag updated successfully'
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+def delete_tag(request, tag_id):
+    """Delete a tag"""
+    try:
+        try:
+            tag = Tag.objects.get(id=tag_id)
+        except Tag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        tag_name = tag.name
+        tag.delete()
+        
+        return Response({
+            'message': f'Tag "{tag_name}" deleted successfully'
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def get_kb_tags(request, kb_id):
+    """Get tags for a specific knowledge base"""
+    try:
+        try:
+            kb = KnowledgeBase.objects.get(id=kb_id)
+        except KnowledgeBase.DoesNotExist:
+            return Response({'error': 'Knowledge base not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        kb_tags = Tag.objects.filter(knowledge_base=kb, status='active')
+        
+        tag_list = []
+        for tag in kb_tags:
+            tag_list.append({
+                'id': tag.id,
+                'name': tag.name,
+                'description': tag.description or '',
+                'color': tag.color,
+                'created_at': tag.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        return Response({
+            'knowledge_base_id': kb_id,
+            'knowledge_base_name': kb.name,
+            'tags': tag_list,
+            'total': len(tag_list)
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def add_tag_to_kb(request, kb_id):
+    """Add a tag to a knowledge base"""
+    try:
+        data = request.data
+        tag_id = data.get('tag_id')
+        
+        if not tag_id:
+            return Response({'error': 'Tag ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            kb = KnowledgeBase.objects.get(id=kb_id)
+        except KnowledgeBase.DoesNotExist:
+            return Response({'error': 'Knowledge base not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            tag = Tag.objects.get(id=tag_id)
+        except Tag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if tag belongs to this knowledge base
+        if tag.knowledge_base != kb:
+            return Response({'error': 'Tag does not belong to this knowledge base'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if tag is already active
+        if tag.status == 'active':
+            return Response({'error': 'Tag is already active'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Activate the tag
+        tag.status = 'active'
+        tag.save()
+        
+        return Response({
+            'knowledge_base_id': kb_id,
+            'tag_id': tag_id,
+            'tag_name': tag.name,
+            'created_at': tag.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'message': f'Tag "{tag.name}" activated successfully'
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+def remove_tag_from_kb(request, kb_id, tag_id):
+    """Remove a tag from a knowledge base"""
+    try:
+        try:
+            kb = KnowledgeBase.objects.get(id=kb_id)
+        except KnowledgeBase.DoesNotExist:
+            return Response({'error': 'Knowledge base not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            tag = Tag.objects.get(id=tag_id)
+        except Tag.DoesNotExist:
+            return Response({'error': 'Tag not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if tag belongs to this knowledge base
+        if tag.knowledge_base != kb:
+            return Response({'error': 'Tag does not belong to this knowledge base'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Check if tag is already inactive
+        if tag.status == 'inactive':
+            return Response({'error': 'Tag is already inactive'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Deactivate the tag
+        tag_name = tag.name
+        tag.status = 'inactive'
+        tag.save()
+        
+        return Response({
+            'message': f'Tag "{tag_name}" removed from knowledge base successfully'
         })
         
     except Exception as e:
