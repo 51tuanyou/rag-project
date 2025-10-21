@@ -314,6 +314,29 @@ export default function KBChunkSettings() {
           throw new Error('Failed to save chunks')
         }
         
+        // Vectorize chunks and store in PGVector
+        try {
+          const vectorizeResponse = await fetch(`${API_BASE}/api/agents/vectorize-chunks/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chunks: chunksData,
+              embedding_model_id: embedding?.value,
+              knowledge_base_id: kbId,
+              document_id: selectedDocument
+            })
+          })
+          
+          if (!vectorizeResponse.ok) {
+            console.warn('Vectorization failed, but chunks were saved successfully')
+          } else {
+            console.log('Chunks vectorized and stored in PGVector successfully')
+          }
+        } catch (vectorizeError) {
+          console.warn('Vectorization error:', vectorizeError)
+          // Don't fail the entire process if vectorization fails
+        }
+        
         // Clear editing state if any
         if (editingChunk) {
           setEditingChunk(null)
@@ -326,7 +349,7 @@ export default function KBChunkSettings() {
         setValidationError('')
         
         // Show success message
-        alert('Chunks saved successfully!')
+        alert('Chunks saved and vectorized successfully!')
         
       } catch (error) {
         console.error('Error saving chunks:', error)

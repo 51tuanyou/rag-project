@@ -522,8 +522,8 @@ def get_knowledge_bases(request):
             # Count documents for this knowledge base
             document_count = kb.documents.count()
             
-            # Count available documents (status = 'completed')
-            available_document_count = kb.documents.filter(status='completed').count()
+            # Count available documents (status = 'completed' or 'archived')
+            available_document_count = kb.documents.filter(status__in=['completed', 'archived']).count()
             
             # Get chunking mode from database
             chunking_mode = 'GENERAL'
@@ -1021,4 +1021,45 @@ def save_document_chunks(request):
         import traceback
         print(f"Error in save_document_chunks: {str(e)}")
         print(f"Traceback: {traceback.format_exc()}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def get_knowledge_bases_for_dropdown(request):
+    """Get knowledge bases for dropdown with display logic"""
+    try:
+        import random
+        
+        # Get all knowledge bases with their tags
+        knowledge_bases = KnowledgeBase.objects.prefetch_related('tags').all()
+        
+        kb_list = []
+        for kb in knowledge_bases:
+            # Get active tags for this knowledge base
+            active_tags = kb.tags.filter(status='active')
+            
+            if active_tags.exists():
+                # If has tags, randomly select one
+                random_tag = random.choice(active_tags)
+                display_name = random_tag.name
+            else:
+                # If no tags, use knowledge base name (truncate if too long)
+                display_name = kb.name
+                if len(display_name) > 20:  # Truncate if longer than 20 characters
+                    display_name = display_name[:17] + '...'
+            
+            kb_list.append({
+                'id': kb.id,
+                'name': kb.name,
+                'display_name': display_name,
+                'has_tags': active_tags.exists(),
+                'tag_count': active_tags.count()
+            })
+        
+        return Response({
+            'knowledge_bases': kb_list,
+            'total': len(kb_list)
+        })
+        
+    except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -405,7 +405,7 @@ export default function KBDocuments() {
             onChange={(e) => setSearchQuery(e.target.value)}
             sx={{ flex: 1 }} 
           />
-          <Button variant="contained" startIcon={<Add />}>+ ADD FILE</Button>
+          <Button variant="contained" startIcon={<Add />}>ADD FILE</Button>
         </Stack>
 
         <TableContainer component={Paper} variant="outlined">

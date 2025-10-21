@@ -14,7 +14,23 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import AutorenewIcon from '@mui/icons-material/Autorenew'
 import { useLocation, useNavigate } from 'react-router-dom'
+
+// Add CSS animation for spinning icon
+const spinKeyframes = `
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+`
+
+// Inject the CSS
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style')
+  style.textContent = spinKeyframes
+  document.head.appendChild(style)
+}
 
 export default function KBProcessing() {
   const navigate = useNavigate()
@@ -84,6 +100,7 @@ export default function KBProcessing() {
   })
   const [completed, setCompleted] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  const [isVectorizing, setIsVectorizing] = useState(false)
   const [creationError, setCreationError] = useState<string>('')
   const [knowledgeBaseId, setKnowledgeBaseId] = useState<number | null>(null)
   const hasInitiatedCreation = useRef(false)
@@ -101,6 +118,73 @@ export default function KBProcessing() {
       }
     } catch (error) {
       console.error('Error fetching chunk settings:', error)
+    }
+  }
+
+  // Start vectorization process
+  const startVectorization = async (kbId: number) => {
+    setIsVectorizing(true)
+    
+    try {
+      // Get documents for this knowledge base
+      const response = await fetch(`${API_BASE}/api/kb/get-documents/?kb_id=${kbId}`)
+      if (!response.ok) {
+        throw new Error('Failed to get documents')
+      }
+      
+      const data = await response.json()
+      const documents = data.documents || []
+      
+      // Process each document for vectorization
+      for (const doc of documents) {
+        try {
+          // Get chunks for this document
+          const chunksResponse = await fetch(`${API_BASE}/api/kb/get-chunks/?document_id=${doc.id}`)
+          if (!chunksResponse.ok) continue
+          
+          const chunksData = await chunksResponse.json()
+          const chunks = chunksData.chunks || []
+          
+          if (chunks.length > 0) {
+            // Prepare chunks data for vectorization
+            const chunksForVectorization = chunks.map((chunk: any) => ({
+              chunk_id: chunk.id,  // 使用 'id' 字段而不是 'chunk_id'
+              content: chunk.content,
+              characters: chunk.characters,
+              chunk_number: chunk.chunk_number
+            }))
+            
+            // Call vectorization API
+            const vectorizeResponse = await fetch(`${API_BASE}/api/agents/vectorize-chunks/`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chunks: chunksForVectorization,
+                embedding_model_id: state?.embeddingModelId,
+                knowledge_base_id: kbId,
+                document_id: doc.id
+              })
+            })
+            
+            if (!vectorizeResponse.ok) {
+              console.warn(`Vectorization failed for document ${doc.id}`)
+            } else {
+              console.log(`Vectorization completed for document ${doc.id}`)
+            }
+          }
+        } catch (error) {
+          console.error(`Error vectorizing document ${doc.id}:`, error)
+        }
+      }
+      
+      // All vectorization completed
+      setCompleted(true)
+      
+    } catch (error) {
+      console.error('Error in vectorization process:', error)
+      setCreationError('Vectorization failed: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsVectorizing(false)
     }
   }
 
@@ -149,10 +233,12 @@ export default function KBProcessing() {
       
       const result = await response.json()
       setKnowledgeBaseId(result.knowledge_base_id)
-      setCompleted(true)
       
       // Fetch chunk settings from the created knowledge base
       await fetchChunkSettings(result.knowledge_base_id)
+      
+      // Start vectorization process
+      await startVectorization(result.knowledge_base_id)
       
     } catch (error) {
       console.error('Error creating knowledge base:', error)
@@ -199,7 +285,9 @@ export default function KBProcessing() {
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
-          {isCreating ? 'CREATING KNOWLEDGE BASE...' : completed ? 'EMBEDDING COMPLETED' : 'EMBEDDING PROCESSING...'}
+          {isCreating ? 'CREATING KNOWLEDGE BASE...' : 
+           isVectorizing ? '向量化处理正在进行中...' : 
+           completed ? 'EMBEDDING COMPLETED' : 'EMBEDDING PROCESSING...'}
         </Typography>
         {files.map((f, i) => {
           // Extract only the filename from the path (handle both / and \ separators)
@@ -211,13 +299,15 @@ export default function KBProcessing() {
               <Typography sx={{ flex: 1 }}>{fileName}</Typography>
               {completed ? (
                 <CheckCircleIcon sx={{ color: 'success.main' }} />
+              ) : isVectorizing ? (
+                <AutorenewIcon sx={{ color: 'primary.main', animation: 'spin 2s linear infinite' }} />
               ) : (
                 <Typography variant="caption">0%</Typography>
               )}
             </Stack>
           )
         })}
-        {(isCreating || !completed) && <LinearProgress variant="indeterminate" />}
+        {(isCreating || isVectorizing || !completed) && <LinearProgress variant="indeterminate" />}
         
         {/* Error display */}
         {creationError && (

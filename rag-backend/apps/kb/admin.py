@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import ChunkSettings, KnowledgeBase, Document, Chunk
+from .models import ChunkSettings, KnowledgeBase, Document, Chunk, Tag
 
 
 @admin.register(ChunkSettings)
@@ -88,6 +88,29 @@ class ChunkAdmin(admin.ModelAdmin):
         }),
         ('Timestamps', {
             'fields': ('created_at',),
+            'classes': ('collapse',)
+        })
+    )
+
+
+@admin.register(Tag)
+class TagAdmin(admin.ModelAdmin):
+    list_display = ['name', 'knowledge_base', 'status', 'color', 'created_at', 'created_by']
+    list_filter = ['status', 'created_at', 'knowledge_base']
+    search_fields = ['name', 'description', 'knowledge_base__name']
+    readonly_fields = ['created_at', 'updated_at']
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('name', 'description', 'knowledge_base', 'created_by')
+        }),
+        ('Appearance', {
+            'fields': ('color',)
+        }),
+        ('Status', {
+            'fields': ('status',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
         })
     )

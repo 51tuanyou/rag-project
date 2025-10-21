@@ -18,6 +18,7 @@ urlpatterns = [
     path('update-document-name/<int:doc_id>/', views.update_document_name, name='update-document-name'),
     path('delete-document/<int:doc_id>/', views.delete_document, name='delete-document'),
     path('get-knowledge-bases/', views.get_knowledge_bases, name='get-knowledge-bases'),
+    path('get-knowledge-bases-dropdown/', views.get_knowledge_bases_for_dropdown, name='get-knowledge-bases-dropdown'),
     path('update-knowledge-base/<int:kb_id>/', views.update_knowledge_base, name='update-knowledge-base'),
     path('delete-knowledge-base/<int:kb_id>/', views.delete_knowledge_base, name='delete-knowledge-base'),
     # Tag-related URLs

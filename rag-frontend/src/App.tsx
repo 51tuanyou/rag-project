@@ -24,6 +24,7 @@ function App() {
   const [llm, setLlm] = useState(() => localStorage.getItem('xenera.llm') || '请选择LLM')
   const [chunk, setChunk] = useState(() => localStorage.getItem('xenera.chunk') || '检索分块数量')
   const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([])
+  const [knowledgeBases, setKnowledgeBases] = useState<Array<{ id: number; name: string; display_name: string; has_tags: boolean; tag_count: number }>>([])
   const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
   const KB_KEY = 'xenera.kb'
   const LLM_KEY = 'xenera.llm'
@@ -46,6 +47,25 @@ function App() {
       } catch {}
     }
     loadProviders()
+  }, [])
+
+  useEffect(() => {
+    const loadKnowledgeBases = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/kb/get-knowledge-bases-dropdown/`)
+        if (res.ok) {
+          const data = await res.json()
+          setKnowledgeBases(data.knowledge_bases || [])
+        } else {
+          console.error('Failed to load knowledge bases:', res.status)
+          setKnowledgeBases([])
+        }
+      } catch (error) {
+        console.error('Error loading knowledge bases:', error)
+        setKnowledgeBases([])
+      }
+    }
+    loadKnowledgeBases()
   }, [])
 
   // Persist selections to localStorage
@@ -88,14 +108,23 @@ function App() {
         Xenera RAG Tool
       </Typography>
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-        <Select size="small" value={kb} onChange={(e: SelectChangeEvent) => {
-          const v = e.target.value
-          if (v === '管理知识库') { navigate('/manage/kb'); return }
-          setKb(v)
-        }} sx={selectSx}>
+        <Select 
+          size="small" 
+          value={kb} 
+          displayEmpty
+          onChange={(e: SelectChangeEvent) => {
+            const v = e.target.value
+            if (v === '管理知识库') { navigate('/manage/kb'); return }
+            setKb(v)
+          }} 
+          sx={selectSx}
+        >
           <MenuItem value="请选择知识库">请选择知识库</MenuItem>
-          <MenuItem value="产品库">产品库</MenuItem>
-          <MenuItem value="FAQ">FAQ</MenuItem>
+          {knowledgeBases.map(kbItem => (
+            <MenuItem key={kbItem.id} value={kbItem.display_name}>
+              {kbItem.display_name}
+            </MenuItem>
+          ))}
           <MenuItem value="管理知识库">
             <Stack direction="row" spacing={1} alignItems="center">
               <Settings fontSize="small" sx={{ color: 'primary.main' }} />
