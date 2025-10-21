@@ -49,11 +49,23 @@ export default function KBChunkSettings() {
   const [chunks, setChunks] = useState<Array<{id: string; content: string; characters: number}>>([])
   const [showPreview, setShowPreview] = useState(false)
   const [editingChunk, setEditingChunk] = useState<string | null>(null)
+  const [editingChunkContent, setEditingChunkContent] = useState('')
   
   // Document-related state
   const [documents, setDocuments] = useState<Array<{id: number; file_name: string; file_path: string}>>([])
   const [selectedDocument, setSelectedDocument] = useState<number | null>(null)
   const [loadingDocuments, setLoadingDocuments] = useState(false)
+  
+  // Chunks from database state
+  const [dbChunks, setDbChunks] = useState<Array<{id: string; content: string; characters: number}>>([])
+  const [loadingChunks, setLoadingChunks] = useState(false)
+  
+  // Chunk settings from database
+  const [dbChunkSettings, setDbChunkSettings] = useState<any>(null)
+  const [loadingChunkSettings, setLoadingChunkSettings] = useState(false)
+  
+  // Check if coming from Documents page
+  const isFromDocuments = !!kbId
   const [newChunkContent, setNewChunkContent] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage] = useState(5)
@@ -82,12 +94,77 @@ export default function KBChunkSettings() {
     }
   }
 
+  // Fetch chunks from database for selected document
+  const fetchChunksFromDB = async (documentId: number) => {
+    setLoadingChunks(true)
+    try {
+      const response = await fetch(`http://localhost:8000/api/kb/get-chunks/?document_id=${documentId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setDbChunks(data.chunks || [])
+        setShowPreview(true) // Show preview when chunks are loaded
+      }
+    } catch (error) {
+      console.error('Error fetching chunks:', error)
+    } finally {
+      setLoadingChunks(false)
+    }
+  }
+
+  // Fetch chunk settings from database
+  const fetchChunkSettings = async () => {
+    if (!kbId) return
+    
+    setLoadingChunkSettings(true)
+    try {
+      const response = await fetch(`http://localhost:8000/api/kb/get-chunk-settings/${kbId}/`)
+      if (response.ok) {
+        const data = await response.json()
+        setDbChunkSettings(data)
+        
+        // Update UI state based on database settings
+        if (data.chunk_type === 'general') {
+          setGeneralExpanded(true)
+          setQaExpanded(false)
+          setQaFormat(false)
+          setDelimiter(data.delimiter || '\\n\\n')
+          setMaxLen(data.max_length?.toString() || '1024')
+          setOverlap(data.overlap?.toString() || '50')
+          setReplaceSpaces(data.replace_spaces || false)
+          setDeleteUrls(data.delete_urls || false)
+        } else if (data.chunk_type === 'qa') {
+          setGeneralExpanded(false)
+          setQaExpanded(true)
+          setQaFormat(true)
+          setQuestionFlag(data.question_flag || 'Q: ')
+          setAnswerFlag(data.answer_flag || 'A: ')
+          setQaLanguage(data.qa_language || 'English')
+          setQaMaxLength(data.qa_max_length?.toString() || '1024')
+          setReplaceSpaces(data.replace_spaces || false)
+          setDeleteUrls(data.delete_urls || false)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching chunk settings:', error)
+    } finally {
+      setLoadingChunkSettings(false)
+    }
+  }
+
   // Fetch documents when component mounts and kbId is available
   useEffect(() => {
     if (kbId) {
       fetchDocuments()
+      fetchChunkSettings()
     }
   }, [kbId])
+
+  // Fetch chunks when document is selected
+  useEffect(() => {
+    if (selectedDocument) {
+      fetchChunksFromDB(selectedDocument)
+    }
+  }, [selectedDocument])
   
   // Q&A specific settings
   const [questionFlag, setQuestionFlag] = useState(() => localStorage.getItem('kb.questionFlag') || 'Q: ')
@@ -176,46 +253,105 @@ export default function KBChunkSettings() {
 
   // Handle navigation with validation
   const handleSaveAndProcess = async () => {
-    if (!validateBeforeNavigation()) {
-      return
-    }
-    
-    let knowledgeName = 'knowledge'
-    
-    if (files[0] && embedding?.label) {
+    if (isFromDocuments) {
+      // From Documents page - process selected document
+      if (!embedding) {
+        setValidationError('Please select an embedding model')
+        return
+      }
+      
+      if (!selectedDocument) {
+        setValidationError('Please select a document to process')
+        return
+      }
+      
       try {
-        knowledgeName = await generateKnowledgeName(files[0], embedding.label)
+        // Get all current chunks (including any edits made by user)
+        const chunksToSave = isFromDocuments ? dbChunks : chunks
+        
+        // Prepare the chunks data for the API
+        const chunksData = chunksToSave.map((chunk, index) => ({
+          chunk_id: chunk.id,
+          content: chunk.content,
+          characters: chunk.characters,
+          chunk_number: index + 1
+        }))
+        
+        // Call the save chunks API that will handle clearing and saving
+        const saveResponse = await fetch(`${API_BASE}/api/kb/save-document-chunks/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            document_id: selectedDocument,
+            chunks: chunksData
+          })
+        })
+        
+        if (!saveResponse.ok) {
+          throw new Error('Failed to save chunks')
+        }
+        
+        // Clear editing state if any
+        if (editingChunk) {
+          setEditingChunk(null)
+          setEditingChunkContent('')
+        }
+        
+        // Refresh chunks display
+        await fetchChunksFromDB(selectedDocument)
+        
+        setValidationError('')
+        
+        // Show success message
+        alert('Chunks saved successfully!')
+        
       } catch (error) {
-        console.error('Error generating knowledge name:', error)
-        // Fallback to simple name generation
+        console.error('Error saving chunks:', error)
+        setValidationError(`Failed to save chunks: ${error.message}`)
+      }
+    } else {
+      // From normal flow - navigate to processing page
+      if (!validateBeforeNavigation()) {
+        return
+      }
+      
+      let knowledgeName = 'knowledge'
+      
+      if (files[0] && embedding?.label) {
+        try {
+          knowledgeName = await generateKnowledgeName(files[0], embedding.label)
+        } catch (error) {
+          console.error('Error generating knowledge name:', error)
+          // Fallback to simple name generation
+          const fileName = files[0].includes('/') ? files[0].split('/').pop() : files[0].split('\\').pop()
+          knowledgeName = fileName?.split('.')[0] || 'knowledge'
+        }
+      } else if (files[0]) {
         const fileName = files[0].includes('/') ? files[0].split('/').pop() : files[0].split('\\').pop()
         knowledgeName = fileName?.split('.')[0] || 'knowledge'
       }
-    } else if (files[0]) {
-      const fileName = files[0].includes('/') ? files[0].split('/').pop() : files[0].split('\\').pop()
-      knowledgeName = fileName?.split('.')[0] || 'knowledge'
+      
+      navigate('/manage/kb/processing', { state: {
+        files,
+        knowledgeName,
+        delimiter,
+        maxLen,
+        replaceSpaces,
+        indexMethod,
+        retrievalMode,
+        embeddingModel: embedding?.label || 'default',
+        embeddingModelId: embedding?.id || null,
+        overlap,
+        deleteUrls,
+        qaFormat,
+        qaLanguage,
+        questionFlag,
+        answerFlag,
+        qaMaxLength,
+        // Pass preview chunks if they exist
+        previewChunks: showPreview && chunks.length > 0 ? chunks : null,
+      } })
     }
-    
-    navigate('/manage/kb/processing', { state: {
-      files,
-      knowledgeName,
-      delimiter,
-      maxLen,
-      replaceSpaces,
-      indexMethod,
-      retrievalMode,
-      embeddingModel: embedding?.label || 'default',
-      embeddingModelId: embedding?.id || null,
-      overlap,
-      deleteUrls,
-      qaFormat,
-      qaLanguage,
-      questionFlag,
-      answerFlag,
-      qaMaxLength,
-      // Pass preview chunks if they exist
-      previewChunks: showPreview && chunks.length > 0 ? chunks : null,
-    } })
   }
 
   // Load embedding models from backend
@@ -319,20 +455,31 @@ export default function KBChunkSettings() {
         }
       }
       
-      // Use the selected document from the database
-      if (!selectedDocument) {
-        console.error('No document selected for processing')
-        return
-      }
+      let filePath
       
-      // Find the selected document
-      const selectedDoc = documents.find(doc => doc.id === selectedDocument)
-      if (!selectedDoc) {
-        console.error('Selected document not found')
-        return
+      if (isFromDocuments) {
+        // Use the selected document from the database
+        if (!selectedDocument) {
+          console.error('No document selected for processing')
+          return
+        }
+        
+        // Find the selected document
+        const selectedDoc = documents.find(doc => doc.id === selectedDocument)
+        if (!selectedDoc) {
+          console.error('Selected document not found')
+          return
+        }
+        
+        filePath = selectedDoc.file_path
+      } else {
+        // Use the first uploaded file from the previous step
+        if (files.length === 0) {
+          console.error('No files available for processing')
+          return
+        }
+        filePath = files[0]
       }
-      
-      const filePath = selectedDoc.file_path
       
       const response = await fetch(`${API_BASE}/api/kb/preview-chunks/`, {
         method: 'POST',
@@ -355,20 +502,30 @@ export default function KBChunkSettings() {
       await fetch(`${API_BASE}/api/kb/delete-chunk/${chunkId}/`, {
         method: 'DELETE'
       })
-      const updatedChunks = chunks.filter(c => c.id !== chunkId)
-      setChunks(updatedChunks)
-      // Save to localStorage
-      localStorage.setItem('kb.chunks', JSON.stringify(updatedChunks))
+      
+      if (isFromDocuments) {
+        // Update dbChunks for documents page
+        const updatedDbChunks = dbChunks.filter(c => c.id !== chunkId)
+        setDbChunks(updatedDbChunks)
+      } else {
+        // Update chunks for normal flow
+        const updatedChunks = chunks.filter(c => c.id !== chunkId)
+        setChunks(updatedChunks)
+        // Save to localStorage
+        localStorage.setItem('kb.chunks', JSON.stringify(updatedChunks))
+      }
     } catch (error) {
       console.error('Failed to delete chunk:', error)
     }
   }
 
   const handleEditChunk = (chunkId: string) => {
-    const chunk = chunks.find(c => c.id === chunkId)
+    // Use the correct chunks array based on the source
+    const chunksToSearch = isFromDocuments ? dbChunks : chunks
+    const chunk = chunksToSearch.find(c => c.id === chunkId)
     if (chunk) {
       setEditingChunk(chunkId)
-      setNewChunkContent(chunk.content)
+      setEditingChunkContent(chunk.content) // Set the content for editing
     }
   }
 
@@ -379,20 +536,33 @@ export default function KBChunkSettings() {
       const response = await fetch(`${API_BASE}/api/kb/update-chunk/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chunk_id: editingChunk, content: newChunkContent })
+        body: JSON.stringify({ chunk_id: editingChunk, content: editingChunkContent })
       })
       
       const data = await response.json()
-      const updatedChunks = chunks.map(c => 
-        c.id === editingChunk 
-          ? { ...c, content: data.content, characters: data.characters }
-          : c
-      )
-      setChunks(updatedChunks)
-      // Save to localStorage
-      localStorage.setItem('kb.chunks', JSON.stringify(updatedChunks))
+      
+      if (isFromDocuments) {
+        // Update dbChunks for documents page
+        const updatedDbChunks = dbChunks.map(c => 
+          c.id === editingChunk 
+            ? { ...c, content: data.content, characters: data.characters }
+            : c
+        )
+        setDbChunks(updatedDbChunks)
+      } else {
+        // Update chunks for normal flow
+        const updatedChunks = chunks.map(c => 
+          c.id === editingChunk 
+            ? { ...c, content: data.content, characters: data.characters }
+            : c
+        )
+        setChunks(updatedChunks)
+        // Save to localStorage
+        localStorage.setItem('kb.chunks', JSON.stringify(updatedChunks))
+      }
+      
       setEditingChunk(null)
-      setNewChunkContent('')
+      setEditingChunkContent('')
     } catch (error) {
       console.error('Failed to update chunk:', error)
     }
@@ -405,14 +575,26 @@ export default function KBChunkSettings() {
       const response = await fetch(`${API_BASE}/api/kb/add-chunk/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newChunkContent, chunk_number: chunks.length + 1 })
+        body: JSON.stringify({ 
+          content: newChunkContent, 
+          chunk_number: (isFromDocuments ? dbChunks : chunks).length + 1 
+        })
       })
       
       const data = await response.json()
-      const updatedChunks = [...chunks, data]
-      setChunks(updatedChunks)
-      // Save to localStorage
-      localStorage.setItem('kb.chunks', JSON.stringify(updatedChunks))
+      
+      if (isFromDocuments) {
+        // Update dbChunks for documents page
+        const updatedDbChunks = [...dbChunks, data]
+        setDbChunks(updatedDbChunks)
+      } else {
+        // Update chunks for normal flow
+        const updatedChunks = [...chunks, data]
+        setChunks(updatedChunks)
+        // Save to localStorage
+        localStorage.setItem('kb.chunks', JSON.stringify(updatedChunks))
+      }
+      
       setNewChunkContent('')
     } catch (error) {
       console.error('Failed to add chunk:', error)
@@ -442,10 +624,12 @@ export default function KBChunkSettings() {
       // If General is expanded, close it and open Q&A
       setGeneralExpanded(false)
       setQaExpanded(true)
+      setQaFormat(true) // Set qaFormat to true when switching to Q&A
     } else {
       // If General is closed, open it and close Q&A
       setGeneralExpanded(true)
       setQaExpanded(false)
+      setQaFormat(false) // Set qaFormat to false when switching to General
     }
     // Reset pagination when switching between settings
     setCurrentPage(1)
@@ -456,10 +640,12 @@ export default function KBChunkSettings() {
       // If Q&A is expanded, close it and open General
       setQaExpanded(false)
       setGeneralExpanded(true)
+      setQaFormat(false) // Set qaFormat to false when switching to General
     } else {
       // If Q&A is closed, open it and close General
       setQaExpanded(true)
       setGeneralExpanded(false)
+      setQaFormat(true) // Set qaFormat to true when switching to Q&A
     }
     // Reset pagination when switching between settings
     setCurrentPage(1)
@@ -574,10 +760,11 @@ export default function KBChunkSettings() {
   }
 
   // Pagination calculations
-  const totalPages = Math.ceil(chunks.length / itemsPerPage)
+  const chunksToUse = isFromDocuments ? dbChunks : chunks
+  const totalPages = Math.ceil(chunksToUse.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
-  const currentChunks = chunks.slice(startIndex, endIndex)
+  const currentChunks = chunksToUse.slice(startIndex, endIndex)
 
   return (
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
@@ -602,23 +789,28 @@ export default function KBChunkSettings() {
             {/* General Setting */}
             <Paper 
               variant="outlined" 
-              onClick={!generalExpanded ? toggleGeneral : undefined}
+              onClick={!generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? toggleGeneral : undefined}
               sx={{ 
                 p: 2, 
                 mb: 2, 
                 borderColor: 'primary.main', 
                 bgcolor: generalExpanded ? 'primary.50' : 'grey.50',
-                cursor: !generalExpanded ? 'pointer' : 'default',
-                transition: 'all 0.2s'
+                cursor: !generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? 'pointer' : 'default',
+                transition: 'all 0.2s',
+                ...(isFromDocuments && dbChunkSettings?.chunk_type === 'qa' && { 
+                  bgcolor: 'grey.100', 
+                  opacity: 0.7,
+                  cursor: 'not-allowed'
+                })
               }}
             >
               <Box 
-                onClick={generalExpanded ? toggleGeneral : undefined}
+                onClick={generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? toggleGeneral : undefined}
                 sx={{ 
-                  cursor: generalExpanded ? 'pointer' : 'default',
+                  cursor: generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? 'pointer' : 'default',
                   p: generalExpanded ? 1 : 0,
                   m: generalExpanded ? -1 : 0,
-                  '&:hover': generalExpanded ? {
+                  '&:hover': generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? {
                     bgcolor: 'rgba(0, 0, 0, 0.04)',
                     borderRadius: 1
                   } : {}
@@ -633,6 +825,11 @@ export default function KBChunkSettings() {
                 <Typography variant="body2" color="text.secondary">
                   General text chunking mode, the chunks retrieved and recalled are the same.
                 </Typography>
+                {isFromDocuments && dbChunkSettings?.chunk_type === 'qa' && (
+                  <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: 'block' }}>
+                    * This setting cannot be modified when chunk type is Q&A
+                  </Typography>
+                )}
               </Box>
 
               {generalExpanded && (
@@ -645,6 +842,7 @@ export default function KBChunkSettings() {
                       size="small" 
                       sx={{ width: 240 }} 
                       placeholder="Enter delimiter (e.g., \n\n for double newlines)"
+                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'}
                       InputProps={{
                         endAdornment: <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>characters</Typography>
                       }}
@@ -655,6 +853,7 @@ export default function KBChunkSettings() {
                       onChange={e => setMaxLen(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
+                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'}
                       InputProps={{ 
                         endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span>
                       }} 
@@ -665,6 +864,7 @@ export default function KBChunkSettings() {
                       onChange={e => setOverlap(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
+                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'}
                       InputProps={{ 
                         endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>number</span>
                       }} 
@@ -675,11 +875,11 @@ export default function KBChunkSettings() {
                     <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Text Pre-processing Rules</Typography>
                     <Stack spacing={1}>
                       <FormControlLabel 
-                        control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} />} 
+                        control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'} />} 
                         label="Replace consecutive spaces, newlines and tabs" 
                       />
                       <FormControlLabel 
-                        control={<Switch checked={deleteUrls} onChange={(_, v) => setDeleteUrls(v)} />} 
+                        control={<Switch checked={deleteUrls} onChange={(_, v) => setDeleteUrls(v)} disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'} />} 
                         label="Delete all URLs and email addresses" 
                       />
                     </Stack>
@@ -696,23 +896,28 @@ export default function KBChunkSettings() {
             {/* Using Q&A Setting */}
             <Paper 
               variant="outlined" 
-              onClick={!qaExpanded ? toggleQa : undefined}
+              onClick={!qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? toggleQa : undefined}
               sx={{ 
                 p: 2, 
                 mb: 2, 
                 borderColor: 'warning.main', 
                 bgcolor: qaExpanded ? 'warning.50' : 'grey.50',
-                cursor: !qaExpanded ? 'pointer' : 'default',
-                transition: 'all 0.2s'
+                cursor: !qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? 'pointer' : 'default',
+                transition: 'all 0.2s',
+                ...(isFromDocuments && dbChunkSettings?.chunk_type === 'general' && { 
+                  bgcolor: 'grey.100', 
+                  opacity: 0.7,
+                  cursor: 'not-allowed'
+                })
               }}
             >
               <Box 
-                onClick={qaExpanded ? toggleQa : undefined}
+                onClick={qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? toggleQa : undefined}
                 sx={{ 
-                  cursor: qaExpanded ? 'pointer' : 'default',
+                  cursor: qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? 'pointer' : 'default',
                   p: qaExpanded ? 1 : 0,
                   m: qaExpanded ? -1 : 0,
-                  '&:hover': qaExpanded ? {
+                  '&:hover': qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? {
                     bgcolor: 'rgba(0, 0, 0, 0.04)',
                     borderRadius: 1
                   } : {}
@@ -727,6 +932,11 @@ export default function KBChunkSettings() {
                 <Typography variant="body2" color="text.secondary">
                   When using the Q&A mode, the Question is used for embedding and retrieval.
                 </Typography>
+                {isFromDocuments && dbChunkSettings?.chunk_type === 'general' && (
+                  <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: 'block' }}>
+                    * This setting cannot be modified when chunk type is General
+                  </Typography>
+                )}
               </Box>
 
               {qaExpanded && (
@@ -738,6 +948,7 @@ export default function KBChunkSettings() {
                       onChange={e => setQuestionFlag(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
+                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'}
                       InputProps={{
                         endAdornment: <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>characters</Typography>
                       }}
@@ -748,6 +959,7 @@ export default function KBChunkSettings() {
                       onChange={e => setAnswerFlag(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
+                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'}
                       InputProps={{ 
                         endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span>
                       }} 
@@ -758,6 +970,7 @@ export default function KBChunkSettings() {
                       onChange={e => setQaMaxLength(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
+                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'}
                       InputProps={{ 
                         endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>number</span>
                       }} 
@@ -768,19 +981,19 @@ export default function KBChunkSettings() {
                     <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Text Pre-processing Rules</Typography>
                     <Stack spacing={1}>
                       <FormControlLabel 
-                        control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} />} 
+                        control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'} />} 
                         label="Replace consecutive spaces, newlines and tabs" 
                       />
                       <Stack direction="row" spacing={1} alignItems="center">
                         <FormControlLabel 
-                          control={<Switch checked={qaFormat} onChange={(_, v) => setQaFormat(v)} />} 
+                          control={<Switch checked={qaFormat} onChange={(_, v) => setQaFormat(v)} disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'} />} 
                           label="Chunk using Q&A format in" 
                         />
                         <Select 
                           size="small" 
                           value={qaLanguage} 
                           onChange={e => setQaLanguage(e.target.value)}
-                          disabled={!qaFormat}
+                          disabled={!qaFormat || (isFromDocuments && dbChunkSettings?.chunk_type === 'general')}
                           sx={{ minWidth: 100 }}
                         >
                           <MenuItem value="English">English</MenuItem>
@@ -800,17 +1013,22 @@ export default function KBChunkSettings() {
             </Paper>
           </Paper>
 
-          <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2, mb: 2, ...(isFromDocuments && { bgcolor: 'grey.50', opacity: 0.7 }) }}>
             <Typography variant="subtitle1" fontWeight={600}>Index Method</Typography>
             <Divider sx={{ my: 1 }} />
-            <RadioGroup row value={indexMethod} onChange={(_, v) => setIndexMethod(v as any)}>
-              <FormControlLabel value="hq" control={<Radio />} label="High Quality" />
-              <FormControlLabel value="eco" control={<Radio />} label="Economical" />
+            <RadioGroup row value={indexMethod} onChange={isFromDocuments ? undefined : (_, v) => setIndexMethod(v as any)}>
+              <FormControlLabel value="hq" control={<Radio disabled={isFromDocuments} />} label="High Quality" />
+              <FormControlLabel value="eco" control={<Radio disabled={isFromDocuments} />} label="Economical" />
             </RadioGroup>
             <Typography variant="caption" color="text.secondary">Once finishing embedding in High Quality mode, reverting to Economical mode is not available.</Typography>
+            {isFromDocuments && (
+              <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 1 }}>
+                * This setting cannot be modified from the Documents page. Please go to Knowledge settings to change.
+              </Typography>
+            )}
           </Paper>
 
-          <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2, mb: 2, ...(isFromDocuments && { bgcolor: 'grey.50', opacity: 0.7 }) }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
               <Typography variant="subtitle1" fontWeight={600}>Embedding Model</Typography>
               <Typography variant="caption" color="error.main" sx={{ fontWeight: 600 }}>*</Typography>
@@ -822,6 +1040,7 @@ export default function KBChunkSettings() {
               groupBy={(o) => o.provider}
               getOptionLabel={(o) => o.label}
               value={embedding}
+              disabled={isFromDocuments}
               onChange={(_, v) => {
                 if (v && v.isManagement) {
                   // Navigate to LLM management page
@@ -855,37 +1074,42 @@ export default function KBChunkSettings() {
                 </li>
               )}
             />
+            {isFromDocuments && (
+              <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 1 }}>
+                * This setting cannot be modified from the Documents page. Please go to Knowledge settings to change.
+              </Typography>
+            )}
           </Paper>
 
-          <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Paper variant="outlined" sx={{ p: 2, mb: 2, ...(isFromDocuments && { bgcolor: 'grey.50', opacity: 0.7 }) }}>
             <Typography variant="subtitle1" fontWeight={600}>Retrieval Setting</Typography>
             <Divider sx={{ my: 1 }} />
 
             {/* Vector Search */}
-            <Paper onClick={() => setRetrievalMode('vector')} variant="outlined" sx={{ p: 2, mb: 1.5, borderColor: retrievalMode === 'vector' ? 'primary.main' : 'divider', cursor: 'pointer' }}>
+            <Paper onClick={isFromDocuments ? () => {} : () => setRetrievalMode('vector')} variant="outlined" sx={{ p: 2, mb: 1.5, borderColor: retrievalMode === 'vector' ? 'primary.main' : 'divider', cursor: isFromDocuments ? 'not-allowed' : 'pointer', ...(isFromDocuments && { opacity: 0.7 }) }}>
               <Typography fontWeight={600}>Vector Search</Typography>
               <Typography variant="body2" color="text.secondary">Generate query embeddings and search for the text chunk most similar to its vector representation.</Typography>
               {retrievalMode === 'vector' && (
                 <Box sx={{ mt: 2 }}>
-                  <FormControlLabel control={<Switch checked={rerankEnabled} onChange={(_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
-                  <Select size="small" disabled={!rerankEnabled} value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ ml: 2 }}>
+                  <FormControlLabel control={<Switch checked={rerankEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
+                  <Select size="small" disabled={isFromDocuments} value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ ml: 2 }}>
                     <MenuItem value="qte-rerank">qte-rerank</MenuItem>
                   </Select>
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
                       <Typography variant="caption">Top K</Typography>
                       <Stack direction="row" spacing={1} alignItems="center">
-                        <Select size="small" value={topK} onChange={e => setTopK(Number(e.target.value))}>
+                        <Select size="small" disabled={isFromDocuments} value={topK} onChange={e => setTopK(Number(e.target.value))}>
                           {[1,2,3,4,5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}
                         </Select>
-                        <Slider value={topK} onChange={(_, v) => setTopK(v as number)} min={1} max={10} sx={{ width: 220 }} />
+                        <Slider disabled={isFromDocuments} value={topK} onChange={(_, v) => setTopK(v as number)} min={1} max={10} sx={{ width: 220 }} />
                       </Stack>
                     </Box>
                     <Box>
-                      <FormControlLabel control={<Switch checked={scoreEnabled} onChange={(_, v) => setScoreEnabled(v)} />} label="Score Threshold" />
+                      <FormControlLabel control={<Switch checked={scoreEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setScoreEnabled(v)} />} label="Score Threshold" />
                       <Stack direction="row" spacing={1} alignItems="center">
-                        <TextField size="small" value={score} sx={{ width: 80 }} disabled={!scoreEnabled} />
-                        <Slider value={score} onChange={(_, v) => setScore(v as number)} min={0} max={1} step={0.01} disabled={!scoreEnabled} sx={{ width: 220 }} />
+                        <TextField size="small" value={score} sx={{ width: 80 }} disabled={isFromDocuments} />
+                        <Slider disabled={isFromDocuments} value={score} onChange={(_, v) => setScore(v as number)} min={0} max={1} step={0.01} sx={{ width: 220 }} />
                       </Stack>
                     </Box>
                   </Stack>
@@ -894,7 +1118,7 @@ export default function KBChunkSettings() {
             </Paper>
 
             {/* Full-Text Search */}
-            <Paper onClick={() => setRetrievalMode('fulltext')} variant="outlined" sx={{ p: 2, mb: 1.5, borderColor: retrievalMode === 'fulltext' ? 'primary.main' : 'divider', cursor: 'pointer' }}>
+            <Paper onClick={isFromDocuments ? () => {} : () => setRetrievalMode('fulltext')} variant="outlined" sx={{ p: 2, mb: 1.5, borderColor: retrievalMode === 'fulltext' ? 'primary.main' : 'divider', cursor: isFromDocuments ? 'not-allowed' : 'pointer', ...(isFromDocuments && { opacity: 0.7 }) }}>
               <Typography fontWeight={600}>Full-Text Search</Typography>
               <Typography variant="body2" color="text.secondary">Index all terms in the document, allowing users to search any term and retrieve relevant text chunk containing those terms.</Typography>
               {retrievalMode === 'fulltext' && (
@@ -907,17 +1131,17 @@ export default function KBChunkSettings() {
                     <Box>
                       <Typography variant="caption">Top K</Typography>
                       <Stack direction="row" spacing={1} alignItems="center">
-                        <Select size="small" value={topK} onChange={e => setTopK(Number(e.target.value))}>
+                        <Select size="small" disabled={isFromDocuments} value={topK} onChange={e => setTopK(Number(e.target.value))}>
                           {[1,2,3,4,5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}
                         </Select>
-                        <Slider value={topK} onChange={(_, v) => setTopK(v as number)} min={1} max={10} sx={{ width: 220 }} />
+                        <Slider disabled={isFromDocuments} value={topK} onChange={(_, v) => setTopK(v as number)} min={1} max={10} sx={{ width: 220 }} />
                       </Stack>
                     </Box>
                     <Box>
-                      <FormControlLabel control={<Switch checked={scoreEnabled} onChange={(_, v) => setScoreEnabled(v)} />} label="Score Threshold" />
+                      <FormControlLabel control={<Switch checked={scoreEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setScoreEnabled(v)} />} label="Score Threshold" />
                       <Stack direction="row" spacing={1} alignItems="center">
-                        <TextField size="small" value={score} sx={{ width: 80 }} disabled={!scoreEnabled} />
-                        <Slider value={score} onChange={(_, v) => setScore(v as number)} min={0} max={1} step={0.01} disabled={!scoreEnabled} sx={{ width: 220 }} />
+                        <TextField size="small" value={score} sx={{ width: 80 }} disabled={isFromDocuments} />
+                        <Slider disabled={isFromDocuments} value={score} onChange={(_, v) => setScore(v as number)} min={0} max={1} step={0.01} sx={{ width: 220 }} />
                       </Stack>
                     </Box>
                   </Stack>
@@ -926,7 +1150,7 @@ export default function KBChunkSettings() {
             </Paper>
 
             {/* Hybrid Search */}
-            <Paper onClick={() => setRetrievalMode('hybrid')} variant="outlined" sx={{ p: 2, borderColor: retrievalMode === 'hybrid' ? 'primary.main' : 'divider', cursor: 'pointer' }}>
+            <Paper onClick={isFromDocuments ? () => {} : () => setRetrievalMode('hybrid')} variant="outlined" sx={{ p: 2, borderColor: retrievalMode === 'hybrid' ? 'primary.main' : 'divider', cursor: isFromDocuments ? 'not-allowed' : 'pointer', ...(isFromDocuments && { opacity: 0.7 }) }}>
               <Typography fontWeight={600}>Hybrid Search</Typography>
               <Chip label="RECOMMEND" size="small" sx={{ ml: 1 }} />
               <Typography variant="body2" color="text.secondary">Execute full-text search and vector searches simultaneously, re-rank to select the best match for the user's query. Users can choose to set weights or configure to a Rerank model.</Typography>
@@ -934,43 +1158,55 @@ export default function KBChunkSettings() {
                 <Box sx={{ mt: 2 }}>
                   <Stack direction="row" spacing={2}>
                     <Paper variant="outlined" sx={{ p: 2, flex: 1, display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                      <FormControlLabel control={<Radio checked={hybridStrategy === 'weighted'} onChange={() => setHybridStrategy('weighted')} />} label="Weighted Score" />
+                      <FormControlLabel control={<Radio checked={hybridStrategy === 'weighted'} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : () => setHybridStrategy('weighted')} />} label="Weighted Score" />
                       <Typography variant="body2" color="text.secondary">By adjusting the weights assigned, this rerank strategy determines whether to prioritize semantic or keyword matching.</Typography>
                     </Paper>
                     <Paper variant="outlined" sx={{ p: 2, flex: 1, display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                      <FormControlLabel control={<Radio checked={hybridStrategy === 'rerank'} onChange={() => setHybridStrategy('rerank')} />} label="Rerank Model" />
+                      <FormControlLabel control={<Radio checked={hybridStrategy === 'rerank'} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : () => setHybridStrategy('rerank')} />} label="Rerank Model" />
                       <Typography variant="body2" color="text.secondary">Rerank model will reorder the candidate document list based on the semantic match with user query, improving the results of semantic ranking</Typography>
                     </Paper>
                   </Stack>
-                  <Select size="small" value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ mt: 2 }}>
+                  <Select size="small" disabled={isFromDocuments} value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ mt: 2 }}>
                     <MenuItem value="qte-rerank">qte-rerank</MenuItem>
                   </Select>
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
                       <Typography variant="caption">Top K</Typography>
                       <Stack direction="row" spacing={1} alignItems="center">
-                        <Select size="small" value={topK} onChange={e => setTopK(Number(e.target.value))}>
+                        <Select size="small" disabled={isFromDocuments} value={topK} onChange={e => setTopK(Number(e.target.value))}>
                           {[1,2,3,4,5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}
                         </Select>
-                        <Slider value={topK} onChange={(_, v) => setTopK(v as number)} min={1} max={10} sx={{ width: 220 }} />
+                        <Slider disabled={isFromDocuments} value={topK} onChange={(_, v) => setTopK(v as number)} min={1} max={10} sx={{ width: 220 }} />
                       </Stack>
                     </Box>
                     <Box>
-                      <FormControlLabel control={<Switch checked={scoreEnabled} onChange={(_, v) => setScoreEnabled(v)} />} label="Score Threshold" />
+                      <FormControlLabel control={<Switch checked={scoreEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setScoreEnabled(v)} />} label="Score Threshold" />
                       <Stack direction="row" spacing={1} alignItems="center">
-                        <TextField size="small" value={score} sx={{ width: 80 }} disabled={!scoreEnabled} />
-                        <Slider value={score} onChange={(_, v) => setScore(v as number)} min={0} max={1} step={0.01} disabled={!scoreEnabled} sx={{ width: 220 }} />
+                        <TextField size="small" value={score} sx={{ width: 80 }} disabled={isFromDocuments} />
+                        <Slider disabled={isFromDocuments} value={score} onChange={(_, v) => setScore(v as number)} min={0} max={1} step={0.01} sx={{ width: 220 }} />
                       </Stack>
                     </Box>
                   </Stack>
                 </Box>
               )}
             </Paper>
+            
+            {isFromDocuments && (
+              <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 2 }}>
+                * This setting cannot be modified from the Documents page. Please go to Knowledge settings to change.
+              </Typography>
+            )}
 
             <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-              <Button variant="outlined" onClick={() => navigate('/manage/kb/upload', { state: { files } })} startIcon={<ArrowBackIcon />}>
-                Previous step
-              </Button>
+              {isFromDocuments ? (
+                <Button variant="outlined" onClick={() => navigate(kbId ? `/manage/kb/documents/${kbId}` : '/manage/kb')}>
+                  Cancel
+                </Button>
+              ) : (
+                <Button variant="outlined" onClick={() => navigate('/manage/kb/upload', { state: { files } })} startIcon={<ArrowBackIcon />}>
+                  Previous step
+                </Button>
+              )}
               <Box sx={{ flex: 1 }} />
               <Button variant="contained" onClick={handleSaveAndProcess}>Save & Process</Button>
             </Stack>
@@ -990,24 +1226,38 @@ export default function KBChunkSettings() {
           <Paper variant="outlined" sx={{ p: 2 }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
               <Typography variant="subtitle2" fontWeight={600}>PREVIEW</Typography>
-              <Select 
-                size="small" 
-                value={selectedDocument || ''} 
-                onChange={(e) => setSelectedDocument(Number(e.target.value))}
-                sx={{ minWidth: 200 }}
-                disabled={loadingDocuments}
-              >
-                {documents.map(doc => (
-                  <MenuItem key={doc.id} value={doc.id}>
-                    {doc.file_name}
-                  </MenuItem>
-                ))}
-              </Select>
+              {isFromDocuments ? (
+                <Select 
+                  size="small" 
+                  value={selectedDocument || ''} 
+                  onChange={(e) => setSelectedDocument(Number(e.target.value))}
+                  sx={{ minWidth: 200 }}
+                  disabled={loadingDocuments}
+                >
+                  {documents.map(doc => (
+                    <MenuItem key={doc.id} value={doc.id}>
+                      {doc.file_name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              ) : (
+                <Select size="small" value={files[0] ?? ''} sx={{ minWidth: 200 }}>
+                  {files.map(f => {
+                    const fileName = f.includes('/') ? f.split('/').pop() : f
+                    return <MenuItem key={f} value={f}>{fileName}</MenuItem>
+                  })}
+                </Select>
+              )}
             </Stack>
             <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-              {showPreview ? `${chunks.length} ESTIMATED CHUNKS` : 
-               loadingDocuments ? 'Loading documents...' : 
-               `${documents.length} documents available`}
+              {isFromDocuments ? (
+                loadingChunks ? 'Loading chunks...' :
+                showPreview ? `${dbChunks.length} STORED CHUNKS` : 
+                loadingDocuments ? 'Loading documents...' : 
+                `${documents.length} documents available`
+              ) : (
+                showPreview ? `${chunks.length} ESTIMATED CHUNKS` : `${files.length} preprocess documents`
+              )}
             </Typography>
             
             {showPreview ? (
@@ -1025,14 +1275,17 @@ export default function KBChunkSettings() {
                         <TextField
                           multiline
                           rows={3}
-                          value={newChunkContent}
-                          onChange={e => setNewChunkContent(e.target.value)}
+                          value={editingChunkContent}
+                          onChange={e => setEditingChunkContent(e.target.value)}
                           size="small"
                           fullWidth
                         />
                         <Stack direction="row" spacing={1}>
                           <Button size="small" variant="contained" onClick={handleSaveChunk}>Save</Button>
-                          <Button size="small" onClick={() => setEditingChunk(null)}>Cancel</Button>
+                          <Button size="small" onClick={() => {
+                            setEditingChunk(null)
+                            setEditingChunkContent('')
+                          }}>Cancel</Button>
                         </Stack>
                       </Stack>
                     ) : (

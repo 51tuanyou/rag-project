@@ -25,4 +25,8 @@ urlpatterns = [
     path('get-kb-tags/<int:kb_id>/', views.get_kb_tags, name='get-kb-tags'),
     path('add-tag-to-kb/<int:kb_id>/', views.add_tag_to_kb, name='add-tag-to-kb'),
     path('remove-tag-from-kb/<int:kb_id>/<int:tag_id>/', views.remove_tag_from_kb, name='remove-tag-from-kb'),
+    path('get-chunks/', views.get_chunks, name='get-chunks'),
+    path('clear-document-chunks/<int:document_id>/', views.clear_document_chunks, name='clear-document-chunks'),
+    path('process-document/', views.process_document, name='process-document'),
+    path('save-document-chunks/', views.save_document_chunks, name='save-document-chunks'),
 ]

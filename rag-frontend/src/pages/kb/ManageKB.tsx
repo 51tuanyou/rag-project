@@ -579,31 +579,6 @@ export default function ManageKB() {
             <Typography variant="h6">Knowledge</Typography>
             <Stack direction="row" spacing={2} alignItems="center">
               <TextField size="small" placeholder="Search" value={query} onChange={e => setQuery(e.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }} />
-              <Button 
-                variant="outlined" 
-                onClick={async () => {
-                  console.log('Manual refresh triggered')
-                  setKbTags({})
-                  const newKbTags: Record<number, KbTag[]> = {}
-                  for (const kb of kbs) {
-                    try {
-                      const response = await fetch(`http://localhost:8000/api/kb/get-kb-tags/${kb.id}/?t=${Date.now()}`)
-                      if (response.ok) {
-                        const data = await response.json()
-                        console.log(`Manual refresh for KB ${kb.id}:`, data.tags)
-                        newKbTags[kb.id] = data.tags || []
-                      }
-                    } catch (err) {
-                      console.error(`Error refreshing KB ${kb.id}:`, err)
-                      newKbTags[kb.id] = []
-                    }
-                  }
-                  setKbTags(newKbTags)
-                }}
-                sx={{ minWidth: 100 }}
-              >
-                Refresh Tags
-              </Button>
               <Button variant="outlined" onClick={() => navigate('/')} startIcon={<ArrowBackIcon />}>
                 返回主页面
               </Button>

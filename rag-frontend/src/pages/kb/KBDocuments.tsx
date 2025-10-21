@@ -4,6 +4,7 @@ import {
   Button,
   Chip,
   IconButton,
+  Menu,
   MenuItem,
   Paper,
   Select,
@@ -17,6 +18,8 @@ import {
   TextField,
   Typography,
   Stack,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf'
@@ -27,6 +30,9 @@ import Settings from '@mui/icons-material/Settings'
 import MoreVert from '@mui/icons-material/MoreVert'
 import Add from '@mui/icons-material/Add'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import EditIcon from '@mui/icons-material/Edit'
+import ArchiveIcon from '@mui/icons-material/Archive'
+import DeleteIcon from '@mui/icons-material/Delete'
 import { useNavigate, useParams } from 'react-router-dom'
 
 // Document type interface
@@ -56,6 +62,8 @@ export default function KBDocuments() {
   const [searchQuery, setSearchQuery] = useState('')
   const [knowledgeBaseName, setKnowledgeBaseName] = useState<string>('')
   const [updatingStatus, setUpdatingStatus] = useState<number | null>(null)
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null)
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null)
   
   const API_BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE || 'http://localhost:8000'
 
@@ -86,6 +94,36 @@ export default function KBDocuments() {
 
     fetchDocuments()
   }, [kbId, API_BASE])
+
+  // Handle menu open/close
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, document: Document) => {
+    setMenuAnchor(event.currentTarget)
+    setSelectedDocument(document)
+  }
+
+  const handleMenuClose = () => {
+    setMenuAnchor(null)
+    setSelectedDocument(null)
+  }
+
+  // Handle menu actions
+  const handleRename = () => {
+    // TODO: Implement rename functionality
+    console.log('Rename document:', selectedDocument?.file_name)
+    handleMenuClose()
+  }
+
+  const handleArchive = () => {
+    // TODO: Implement archive functionality
+    console.log('Archive document:', selectedDocument?.file_name)
+    handleMenuClose()
+  }
+
+  const handleDelete = () => {
+    // TODO: Implement delete functionality
+    console.log('Delete document:', selectedDocument?.file_name)
+    handleMenuClose()
+  }
 
   // Handle document status toggle
   const handleStatusToggle = async (docId: number, currentStatus: string) => {
@@ -265,7 +303,12 @@ export default function KBDocuments() {
                       >
                         <Settings />
                       </IconButton>
-                      <IconButton size="small"><MoreVert /></IconButton>
+                      <IconButton 
+                        size="small"
+                        onClick={(e) => handleMenuOpen(e, doc)}
+                      >
+                        <MoreVert />
+                      </IconButton>
                     </Stack>
                   </TableCell>
                 </TableRow>
@@ -273,6 +316,40 @@ export default function KBDocuments() {
             </TableBody>
           </Table>
         </TableContainer>
+
+        {/* Action Menu */}
+        <Menu
+          anchorEl={menuAnchor}
+          open={Boolean(menuAnchor)}
+          onClose={handleMenuClose}
+          anchorOrigin={{
+            vertical: 'bottom',
+            horizontal: 'right',
+          }}
+          transformOrigin={{
+            vertical: 'top',
+            horizontal: 'right',
+          }}
+        >
+          <MenuItem onClick={handleRename}>
+            <ListItemIcon>
+              <EditIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Rename</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleArchive}>
+            <ListItemIcon>
+              <ArchiveIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Archive</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleDelete}>
+            <ListItemIcon>
+              <DeleteIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Delete</ListItemText>
+          </MenuItem>
+        </Menu>
       </Box>
     </Box>
   )

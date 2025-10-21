@@ -763,3 +763,162 @@ def remove_tag_from_kb(request, kb_id, tag_id):
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def get_chunks(request):
+    """Get chunks for a specific document"""
+    try:
+        document_id = request.GET.get('document_id')
+        if not document_id:
+            return Response({'error': 'Document ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get chunks for the document
+        chunks = Chunk.objects.filter(document_id=document_id).order_by('chunk_number')
+        
+        chunk_list = []
+        for chunk in chunks:
+            chunk_list.append({
+                'id': chunk.chunk_id,
+                'content': chunk.content,
+                'characters': chunk.characters,
+                'word_count': chunk.word_count,
+                'chunk_number': chunk.chunk_number,
+                'created_at': chunk.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        return Response({
+            'chunks': chunk_list,
+            'total': len(chunk_list)
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+def clear_document_chunks(request, document_id):
+    """Clear all chunks for a specific document"""
+    try:
+        # Get the document
+        try:
+            document = Document.objects.get(id=document_id)
+        except Document.DoesNotExist:
+            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Delete all chunks for this document
+        chunks_deleted = Chunk.objects.filter(document=document).delete()
+        
+        print(f"Deleted {chunks_deleted[0]} chunks for document {document_id}")
+        
+        return Response({
+            'message': f'Successfully cleared {chunks_deleted[0]} chunks for document {document_id}',
+            'chunks_deleted': chunks_deleted[0]
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def process_document(request):
+    """Process a document with new chunk settings"""
+    try:
+        data = request.data
+        document_id = data.get('document_id')
+        file_path = data.get('file_path')
+        settings = data.get('settings', {})
+        
+        if not document_id:
+            return Response({'error': 'Document ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not file_path:
+            return Response({'error': 'File path is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get the document
+        try:
+            document = Document.objects.get(id=document_id)
+        except Document.DoesNotExist:
+            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Handle literal newline characters in delimiter
+        if 'delimiter' in settings:
+            settings['delimiter'] = settings['delimiter'].replace('\\n', '\n')
+        
+        print(f"Processing document {document_id} with file path: {file_path}")
+        print(f"Settings: {settings}")
+        
+        # Parse the document
+        parser = DocumentParser()
+        document_content = parser.parse_document(file_path)
+        
+        # Initialize chunking service
+        chunking_service = ChunkingService(settings)
+        chunks = chunking_service.process_document(document_content)
+        
+        # Create new chunk records
+        for i, chunk_data in enumerate(chunks):
+            Chunk.objects.create(
+                document=document,
+                chunk_id=chunk_data.get('id', f'chunk_{i+1}'),
+                content=chunk_data.get('content', ''),
+                characters=chunk_data.get('characters', 0),
+                chunk_number=i + 1
+            )
+        
+        print(f"Created {len(chunks)} new chunks for document {document_id}")
+        
+        return Response({
+            'message': f'Successfully processed document {document_id}',
+            'chunks_created': len(chunks)
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in process_document: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def save_document_chunks(request):
+    """Save chunks for a document (clear existing and save new ones)"""
+    try:
+        data = request.data
+        document_id = data.get('document_id')
+        chunks = data.get('chunks', [])
+        
+        if not document_id:
+            return Response({'error': 'Document ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get the document
+        try:
+            document = Document.objects.get(id=document_id)
+        except Document.DoesNotExist:
+            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Clear existing chunks for this document
+        chunks_deleted = Chunk.objects.filter(document=document).delete()
+        print(f"Deleted {chunks_deleted[0]} existing chunks for document {document_id}")
+        
+        # Create new chunk records
+        for chunk_data in chunks:
+            Chunk.objects.create(
+                document=document,
+                chunk_id=chunk_data.get('chunk_id', f'chunk_{chunk_data.get("chunk_number", 1)}'),
+                content=chunk_data.get('content', ''),
+                characters=chunk_data.get('characters', 0),
+                chunk_number=chunk_data.get('chunk_number', 1)
+            )
+        
+        print(f"Created {len(chunks)} new chunks for document {document_id}")
+        
+        return Response({
+            'message': f'Successfully saved {len(chunks)} chunks for document {document_id}',
+            'chunks_saved': len(chunks)
+        })
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in save_document_chunks: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
