@@ -17,6 +17,8 @@ import {
   Chip,
   Slider,
   IconButton,
+  Snackbar,
+  Alert,
 } from '@mui/material'
 import Autocomplete from '@mui/material/Autocomplete'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
@@ -52,9 +54,12 @@ export default function KBChunkSettings() {
   const [editingChunkContent, setEditingChunkContent] = useState('')
   
   // Document-related state
-  const [documents, setDocuments] = useState<Array<{id: number; file_name: string; file_path: string}>>([])
+  const [documents, setDocuments] = useState<Array<{id: number; file_name: string; file_path: string; status: string}>>([])
   const [selectedDocument, setSelectedDocument] = useState<number | null>(null)
   const [loadingDocuments, setLoadingDocuments] = useState(false)
+  const [documentStatus, setDocumentStatus] = useState<string>('')
+  const [snackbarOpen, setSnackbarOpen] = useState(false)
+  const [snackbarMessage, setSnackbarMessage] = useState('')
   
   // Chunks from database state
   const [dbChunks, setDbChunks] = useState<Array<{id: string; content: string; characters: number}>>([])
@@ -85,6 +90,7 @@ export default function KBChunkSettings() {
         // Auto-select first document if available
         if (data.documents && data.documents.length > 0) {
           setSelectedDocument(data.documents[0].id)
+          setDocumentStatus(data.documents[0].status || '')
         }
       }
     } catch (error) {
@@ -174,6 +180,17 @@ export default function KBChunkSettings() {
   const [embeddingOptions, setEmbeddingOptions] = useState<EmbeddingModel[]>([])
   const [embedding, setEmbedding] = useState<EmbeddingModel | null>(null)
   const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
+  
+  // Show error message for archived documents
+  const showArchivedError = () => {
+    setSnackbarMessage('Document is not available')
+    setSnackbarOpen(true)
+  }
+
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false)
+  }
+  
   const [highlighted, setHighlighted] = useState<EmbeddingModel | null>(null)
   const [rerankEnabled, setRerankEnabled] = useState(() => localStorage.getItem('kb.rerankEnabled') === 'true')
   const [rerankModel, setRerankModel] = useState(() => localStorage.getItem('kb.rerankModel') || 'qte-rerank')
@@ -262,6 +279,12 @@ export default function KBChunkSettings() {
       
       if (!selectedDocument) {
         setValidationError('Please select a document to process')
+        return
+      }
+      
+      // Check if document is archived
+      if (documentStatus === 'archived') {
+        showArchivedError()
         return
       }
       
@@ -498,6 +521,12 @@ export default function KBChunkSettings() {
   }
 
   const handleDeleteChunk = async (chunkId: string) => {
+    // Check if document is archived
+    if (isFromDocuments && documentStatus === 'archived') {
+      showArchivedError()
+      return
+    }
+    
     try {
       await fetch(`${API_BASE}/api/kb/delete-chunk/${chunkId}/`, {
         method: 'DELETE'
@@ -520,6 +549,12 @@ export default function KBChunkSettings() {
   }
 
   const handleEditChunk = (chunkId: string) => {
+    // Check if document is archived
+    if (isFromDocuments && documentStatus === 'archived') {
+      showArchivedError()
+      return
+    }
+    
     // Use the correct chunks array based on the source
     const chunksToSearch = isFromDocuments ? dbChunks : chunks
     const chunk = chunksToSearch.find(c => c.id === chunkId)
@@ -531,6 +566,12 @@ export default function KBChunkSettings() {
 
   const handleSaveChunk = async () => {
     if (!editingChunk) return
+    
+    // Check if document is archived
+    if (isFromDocuments && documentStatus === 'archived') {
+      showArchivedError()
+      return
+    }
     
     try {
       const response = await fetch(`${API_BASE}/api/kb/update-chunk/`, {
@@ -570,6 +611,12 @@ export default function KBChunkSettings() {
 
   const handleAddChunk = async () => {
     if (!newChunkContent.trim()) return
+    
+    // Check if document is archived
+    if (isFromDocuments && documentStatus === 'archived') {
+      showArchivedError()
+      return
+    }
     
     try {
       const response = await fetch(`${API_BASE}/api/kb/add-chunk/`, {
@@ -1267,8 +1314,21 @@ export default function KBChunkSettings() {
                     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                       <Typography variant="caption" color="text.secondary">{chunk.id} · {chunk.characters} characters</Typography>
                       <Box sx={{ flex: 1 }} />
-                      <Button size="small" onClick={() => handleEditChunk(chunk.id)}>Edit</Button>
-                      <Button size="small" color="error" onClick={() => handleDeleteChunk(chunk.id)}>Delete</Button>
+                      <Button 
+                        size="small" 
+                        onClick={() => handleEditChunk(chunk.id)}
+                        disabled={isFromDocuments && documentStatus === 'archived'}
+                      >
+                        Edit
+                      </Button>
+                      <Button 
+                        size="small" 
+                        color="error" 
+                        onClick={() => handleDeleteChunk(chunk.id)}
+                        disabled={isFromDocuments && documentStatus === 'archived'}
+                      >
+                        Delete
+                      </Button>
                     </Stack>
                     {editingChunk === chunk.id ? (
                       <Stack spacing={1}>
@@ -1306,8 +1366,14 @@ export default function KBChunkSettings() {
                     size="small"
                     fullWidth
                     sx={{ mb: 1 }}
+                    disabled={isFromDocuments && documentStatus === 'archived'}
                   />
-                  <Button size="small" variant="contained" onClick={handleAddChunk} disabled={!newChunkContent.trim()}>
+                  <Button 
+                    size="small" 
+                    variant="contained" 
+                    onClick={handleAddChunk} 
+                    disabled={!newChunkContent.trim() || (isFromDocuments && documentStatus === 'archived')}
+                  >
                     Add Chunk
                   </Button>
                 </Paper>
@@ -1352,6 +1418,22 @@ export default function KBChunkSettings() {
         </Box>
       </Stack>
       </Box>
+      
+      {/* Snackbar for archived document error */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={4000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert 
+          onClose={handleSnackbarClose} 
+          severity="error"
+          sx={{ width: '100%' }}
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

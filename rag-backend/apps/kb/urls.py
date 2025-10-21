@@ -15,8 +15,11 @@ urlpatterns = [
     path('get-chunk-settings/<int:kb_id>/', views.get_chunk_settings, name='get-chunk-settings'),
     path('get-documents/', views.get_documents, name='get-documents'),
     path('update-document-status/<int:doc_id>/', views.update_document_status, name='update-document-status'),
+    path('update-document-name/<int:doc_id>/', views.update_document_name, name='update-document-name'),
+    path('delete-document/<int:doc_id>/', views.delete_document, name='delete-document'),
     path('get-knowledge-bases/', views.get_knowledge_bases, name='get-knowledge-bases'),
     path('update-knowledge-base/<int:kb_id>/', views.update_knowledge_base, name='update-knowledge-base'),
+    path('delete-knowledge-base/<int:kb_id>/', views.delete_knowledge_base, name='delete-knowledge-base'),
     # Tag-related URLs
     path('get-tags/', views.get_tags, name='get-tags'),
     path('create-tag/', views.create_tag, name='create-tag'),

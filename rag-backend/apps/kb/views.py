@@ -389,8 +389,8 @@ def update_document_status(request, doc_id):
         data = request.data
         new_status = data.get('status')
         
-        if new_status not in ['completed', 'disabled']:
-            return Response({'error': 'Invalid status. Must be "completed" or "disabled"'}, status=status.HTTP_400_BAD_REQUEST)
+        if new_status not in ['completed', 'disabled', 'archived']:
+            return Response({'error': 'Invalid status. Must be "completed", "disabled", or "archived"'}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             document = Document.objects.get(id=doc_id)
@@ -405,6 +405,106 @@ def update_document_status(request, doc_id):
             'file_name': document.file_name,
             'status': document.status,
             'message': f'Document status updated to {new_status}'
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PATCH'])
+def update_document_name(request, doc_id):
+    """Update document name"""
+    try:
+        data = request.data
+        new_name = data.get('file_name')
+        
+        if not new_name or not new_name.strip():
+            return Response({'error': 'File name is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            document = Document.objects.get(id=doc_id)
+        except Document.DoesNotExist:
+            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        document.file_name = new_name.strip()
+        document.save()
+        
+        return Response({
+            'id': document.id,
+            'file_name': document.file_name,
+            'message': 'Document name updated successfully'
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+def delete_document(request, doc_id):
+    """Delete a document and all its associated chunks"""
+    try:
+        try:
+            document = Document.objects.get(id=doc_id)
+        except Document.DoesNotExist:
+            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get document info before deletion
+        doc_name = document.file_name
+        kb_id = document.knowledge_base.id
+        
+        # Delete all chunks associated with this document first
+        chunks_deleted = Chunk.objects.filter(document=document).delete()
+        print(f"Deleted {chunks_deleted[0]} chunks for document {doc_id}")
+        
+        # Delete the document
+        document.delete()
+        print(f"Deleted document {doc_id}: {doc_name}")
+        
+        return Response({
+            'message': f'Document "{doc_name}" deleted successfully',
+            'chunks_deleted': chunks_deleted[0],
+            'knowledge_base_id': kb_id
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['DELETE'])
+def delete_knowledge_base(request, kb_id):
+    """Delete a knowledge base and all its associated data"""
+    try:
+        try:
+            kb = KnowledgeBase.objects.get(id=kb_id)
+        except KnowledgeBase.DoesNotExist:
+            return Response({'error': 'Knowledge base not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Get knowledge base info before deletion
+        kb_name = kb.name
+        
+        # Delete all chunks associated with documents in this knowledge base
+        chunks_deleted = Chunk.objects.filter(document__knowledge_base=kb).delete()
+        print(f"Deleted {chunks_deleted[0]} chunks for knowledge base {kb_id}")
+        
+        # Delete all documents in this knowledge base
+        documents_deleted = Document.objects.filter(knowledge_base=kb).delete()
+        print(f"Deleted {documents_deleted[0]} documents for knowledge base {kb_id}")
+        
+        # Delete all tags associated with this knowledge base
+        tags_deleted = Tag.objects.filter(knowledge_base=kb).delete()
+        print(f"Deleted {tags_deleted[0]} tags for knowledge base {kb_id}")
+        
+        # Delete chunk settings if exists
+        if kb.chunk_settings:
+            kb.chunk_settings.delete()
+            print(f"Deleted chunk settings for knowledge base {kb_id}")
+        
+        # Finally delete the knowledge base itself
+        kb.delete()
+        print(f"Deleted knowledge base {kb_id}: {kb_name}")
+        
+        return Response({
+            'message': f'Knowledge base "{kb_name}" deleted successfully',
+            'chunks_deleted': chunks_deleted[0],
+            'documents_deleted': documents_deleted[0],
+            'tags_deleted': tags_deleted[0]
         })
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -117,6 +117,7 @@ export default function ManageKB() {
   const [hoveredKb, setHoveredKb] = useState<number | null>(null)
   const [manageTagsAnchor, setManageTagsAnchor] = useState<HTMLElement | null>(null)
   const [currentKbId, setCurrentKbId] = useState<number | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   
   // 编辑标签相关状态
   const [editingTag, setEditingTag] = useState<Tag | null>(null)
@@ -249,6 +250,43 @@ export default function ManageKB() {
     setSelectedKb(null)
   }
 
+  // Handle delete dialog
+  const handleDeleteDialogClose = () => {
+    setDeleteDialogOpen(false)
+    setSelectedKb(null) // Clear selected KB when dialog closes
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedKb) return
+    
+    try {
+      console.log('Deleting knowledge base:', selectedKb.id)
+      
+      const response = await fetch(`http://localhost:8000/api/kb/delete-knowledge-base/${selectedKb.id}/`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete knowledge base')
+      }
+      
+      // Update local state - remove the deleted knowledge base
+      setKbs(prevKbs => 
+        prevKbs.filter(kb => kb.id !== selectedKb.id)
+      )
+      
+      console.log('Knowledge base deleted successfully')
+      handleDeleteDialogClose()
+    } catch (error) {
+      console.error('Error deleting knowledge base:', error)
+      alert(`Failed to delete knowledge base: ${error.message}`)
+    }
+  }
+
   const handleEdit = () => {
     if (selectedKb) {
       setEditForm({
@@ -264,10 +302,9 @@ export default function ManageKB() {
 
   const handleDelete = () => {
     if (selectedKb) {
-      // TODO: Implement delete functionality
-      console.log('Delete KB:', selectedKb.id)
+      setDeleteDialogOpen(true)
     }
-    handleMenuClose()
+    setMenuAnchor(null) // Close menu but keep selectedKb
   }
 
   const validateEdit = (v: EditKbForm) => {
@@ -1435,6 +1472,33 @@ export default function ManageKB() {
             </Box>
           </Stack>
         </Box>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteDialogClose}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Are you sure Delete?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will permanently delete the knowledge base "{selectedKb?.name}" and all its associated documents, chunks, and settings. This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteDialogClose}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleDeleteConfirm}
+            variant="contained"
+            color="error"
+          >
+            I'm sure
+          </Button>
+        </DialogActions>
       </Dialog>
       </Box>
     </Box>
