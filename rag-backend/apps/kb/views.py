@@ -408,3 +408,62 @@ def update_document_status(request, doc_id):
         })
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def get_knowledge_bases(request):
+    """Get all knowledge bases"""
+    try:
+        # Get all knowledge bases with related data
+        knowledge_bases = KnowledgeBase.objects.select_related('chunk_settings', 'embedding_model').prefetch_related('documents')
+        
+        kb_list = []
+        for kb in knowledge_bases:
+            # Count documents for this knowledge base
+            document_count = kb.documents.count()
+            
+            # Get chunking mode from database
+            chunking_mode = 'GENERAL'
+            if kb.chunk_settings:
+                if kb.chunk_settings.chunk_type == 'qa':
+                    chunking_mode = 'Q&A'
+                elif kb.chunk_settings.delimiter != '\\n\\n':
+                    chunking_mode = 'CUSTOM'
+            
+            # Get retrieval mode display
+            retrieval_mode_display = kb.retrieval_mode.upper()
+            if kb.retrieval_mode == 'vector':
+                retrieval_mode_display = 'VECTOR'
+            elif kb.retrieval_mode == 'fulltext':
+                retrieval_mode_display = 'FULL-TEXT'
+            elif kb.retrieval_mode == 'hybrid':
+                retrieval_mode_display = 'HYBRID'
+            
+            # Get index method display
+            index_method_display = kb.index_method.upper()
+            if kb.index_method == 'hq':
+                index_method_display = 'HQ'
+            elif kb.index_method == 'eco':
+                index_method_display = 'ECO'
+            
+            kb_list.append({
+                'id': kb.id,
+                'name': kb.name,
+                'description': kb.description or '',
+                'document_count': document_count,
+                'chunking_mode': chunking_mode,
+                'retrieval_mode': retrieval_mode_display,
+                'index_method': index_method_display,
+                'embedding_model': kb.embedding_model.model_name if kb.embedding_model else None,
+                'created_at': kb.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'updated_at': kb.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'created_by': kb.created_by.username if kb.created_by else None
+            })
+        
+        return Response({
+            'knowledge_bases': kb_list,
+            'total': len(kb_list)
+        })
+        
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

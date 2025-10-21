@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import {
   Box,
   Button,
@@ -16,6 +16,8 @@ import {
   TextField,
   Typography,
   IconButton,
+  CircularProgress,
+  Alert,
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import FolderIcon from '@mui/icons-material/Folder'
@@ -24,11 +26,17 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useNavigate } from 'react-router-dom'
 
 type KnowledgeBase = {
-  id: string
+  id: number
   name: string
-  tags: string[]
-  enabled: boolean
-  itemsLabel?: string
+  description: string
+  document_count: number
+  chunking_mode: string
+  retrieval_mode: string
+  index_method: string
+  embedding_model?: string
+  created_at: string
+  updated_at: string
+  created_by?: string
 }
 
 type KbForm = {
@@ -40,24 +48,48 @@ type KbForm = {
   contextSize: string
 }
 
-const initialKBs: KnowledgeBase[] = [
-  { id: 'kb1', name: '产品库', tags: ['文档', 'PDF', 'FAQ'], enabled: true, itemsLabel: '56 篇文档' },
-  { id: 'kb2', name: '用户手册', tags: ['文档', '网页'], enabled: true },
-  { id: 'kb3', name: 'FAQ', tags: ['FAQ'], enabled: false },
-]
-
 export default function ManageKB() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
-  const [kbs, setKbs] = useState<KnowledgeBase[]>(initialKBs)
+  const [kbs, setKbs] = useState<KnowledgeBase[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [form, setForm] = useState<KbForm>({ name: '', type: '', authName: '', baseUrl: '', contextSize: '4096' })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  // Fetch knowledge bases from API
+  useEffect(() => {
+    const fetchKnowledgeBases = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+        const response = await fetch('http://localhost:8000/api/kb/get-knowledge-bases/')
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        const data = await response.json()
+        setKbs(data.knowledge_bases || [])
+      } catch (err) {
+        console.error('Error fetching knowledge bases:', err)
+        setError(err instanceof Error ? err.message : 'Failed to fetch knowledge bases')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchKnowledgeBases()
+  }, [])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return kbs
-    return kbs.filter(k => k.name.toLowerCase().includes(q) || k.tags.some(t => t.toLowerCase().includes(q)))
+    return kbs.filter(k => 
+      k.name.toLowerCase().includes(q) || 
+      k.description.toLowerCase().includes(q) ||
+      k.chunking_mode.toLowerCase().includes(q) ||
+      k.retrieval_mode.toLowerCase().includes(q)
+    )
   }, [kbs, query])
 
   // toggling moved out of current UI (cards are read-only in this view)
@@ -120,36 +152,58 @@ export default function ManageKB() {
             </Stack>
           </Stack>
 
-          <Grid container spacing={2}>
-            {filtered.map(kb => (
-              <Grid key={kb.id} size={{ xs: 12, sm: 6, md: 6 }}>
-                <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Box sx={{ width: 40, height: 40, bgcolor: 'action.hover', color: 'text.primary', borderRadius: 2, display: 'grid', placeItems: 'center' }}>
-                      <FolderIcon />
-                    </Box>
-                    <Box>
-                      <Typography fontWeight={700}>{kb.name}</Typography>
-                      <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
-                        <Chip size="small" label="GENERAL" variant="outlined" />
-                        <Chip size="small" label="HQ · VECTOR" variant="outlined" />
-                      </Stack>
-                    </Box>
-                  </Stack>
+          {loading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          )}
 
-                  <Typography variant="body2" sx={{ mt: 1.5 }}>
-                    useful for when you want to answer queries about the {kb.name}
-                  </Typography>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
 
-                  <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
-                    <Typography variant="caption" color="text.secondary">📄 1</Typography>
-                    <Typography variant="caption" color="text.secondary">⭐ 0</Typography>
-                    <Typography variant="caption" color="text.secondary">Updated 23 days ago</Typography>
-                  </Stack>
-                </Paper>
-              </Grid>
-            ))}
-          </Grid>
+          {!loading && !error && (
+            <Grid container spacing={2}>
+              {filtered.map(kb => (
+                <Grid key={kb.id} size={{ xs: 12, sm: 6, md: 6 }}>
+                  <Paper variant="outlined" sx={{ p: 2, height: '100%' }}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Box sx={{ width: 40, height: 40, bgcolor: 'action.hover', color: 'text.primary', borderRadius: 2, display: 'grid', placeItems: 'center' }}>
+                        <FolderIcon />
+                      </Box>
+                      <Box>
+                        <Typography fontWeight={700}>{kb.name}</Typography>
+                        <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
+                          <Chip size="small" label={kb.chunking_mode} variant="outlined" />
+                          <Chip size="small" label={`${kb.index_method} · ${kb.retrieval_mode}`} variant="outlined" />
+                        </Stack>
+                      </Box>
+                    </Stack>
+
+                    <Typography variant="body2" sx={{ mt: 1.5 }}>
+                      {kb.description || `Useful for when you want to answer queries about ${kb.name}`}
+                    </Typography>
+
+                    <Stack direction="row" spacing={2} sx={{ mt: 1.5 }}>
+                      <Typography variant="caption" color="text.secondary">📄 {kb.document_count}</Typography>
+                      <Typography variant="caption" color="text.secondary">⭐ 0</Typography>
+                      <Typography variant="caption" color="text.secondary">Updated {new Date(kb.updated_at).toLocaleDateString()}</Typography>
+                    </Stack>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          )}
+
+          {!loading && !error && filtered.length === 0 && (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="body1" color="text.secondary">
+                {kbs.length === 0 ? 'No knowledge bases found. Create your first knowledge base!' : 'No knowledge bases match your search.'}
+              </Typography>
+            </Box>
+          )}
         </Grid>
       </Grid>
 

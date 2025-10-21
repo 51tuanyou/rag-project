@@ -15,4 +15,5 @@ urlpatterns = [
     path('get-chunk-settings/<int:kb_id>/', views.get_chunk_settings, name='get-chunk-settings'),
     path('get-documents/', views.get_documents, name='get-documents'),
     path('update-document-status/<int:doc_id>/', views.update_document_status, name='update-document-status'),
+    path('get-knowledge-bases/', views.get_knowledge_bases, name='get-knowledge-bases'),
 ]
