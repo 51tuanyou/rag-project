@@ -12,6 +12,10 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,12 +25,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-y$2abew*!d2vv1yj7y)n)=d*8g(jgkbkhhk-3o6wsdxx@^o)%%"
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-y$2abew*!d2vv1yj7y)n)=d*8g(jgkbkhhk-3o6wsdxx@^o)%%")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "True").lower() in {"true", "1", "yes"}
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 
 # Application definition
@@ -142,10 +146,7 @@ STATIC_URL = "static/"
 
 # CORS
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-]
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
 
 # REST Framework
 REST_FRAMEWORK = {
@@ -170,3 +171,22 @@ LANGFUSE_HOST = os.getenv("LANGFUSE_HOST", "")
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# PGVector Configuration
+PGVECTOR_HOST = os.getenv("PGVECTOR_HOST", "localhost")
+PGVECTOR_PORT = os.getenv("PGVECTOR_PORT", "5432")
+PGVECTOR_DB = os.getenv("PGVECTOR_DB", "rag_vectors")
+PGVECTOR_USER = os.getenv("PGVECTOR_USER", "postgres")
+PGVECTOR_PASSWORD = os.getenv("PGVECTOR_PASSWORD", "")
+
+# File Upload Settings
+MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE", "10485760"))  # 10MB in bytes
+ALLOWED_FILE_TYPES = os.getenv("ALLOWED_FILE_TYPES", "pdf,docx,txt,md").split(",")
+
+# Vector Search Settings
+DEFAULT_TOP_K = int(os.getenv("DEFAULT_TOP_K", "3"))
+DEFAULT_SIMILARITY_THRESHOLD = float(os.getenv("DEFAULT_SIMILARITY_THRESHOLD", "0.7"))
+
+# LLM API Settings
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
+OLLAMA_API_BASE = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")

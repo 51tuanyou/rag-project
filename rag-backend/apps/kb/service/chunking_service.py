@@ -15,12 +15,13 @@ class ChunkingService:
         # Apply text pre-processing
         processed_text = self._preprocess_text(document)
         
-        # Split into chunks
-        chunks = self._split_into_chunks(processed_text)
-        
-        # Apply Q&A format if enabled
+        # Check if Q&A format is enabled
         if self.settings.get('qa_format', False):
-            chunks = self._apply_qa_format(chunks)
+            # For Q&A format, process directly without splitting by delimiter
+            chunks = self._process_qa_document(processed_text)
+        else:
+            # For regular format, split into chunks
+            chunks = self._split_into_chunks(processed_text)
         
         return chunks
     
@@ -38,6 +39,124 @@ class ChunkingService:
             processed = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '', processed)
         
         return processed.strip()
+    
+    def _process_qa_document(self, text: str) -> List[Dict[str, Any]]:
+        """Process document for Q&A format"""
+        question_flag = self.settings.get('question_flag', 'Q: ').strip()
+        answer_flag = self.settings.get('answer_flag', 'A: ').strip()
+        max_length = int(self.settings.get('qa_max_length', 1024))
+        
+        print(f"Q&A processing settings: question_flag='{question_flag}', answer_flag='{answer_flag}', max_length={max_length}")
+        
+        # Create regex patterns for both Chinese and English punctuation
+        def create_flag_pattern(flag):
+            # Replace punctuation with both Chinese and English versions
+            pattern = flag
+            # Common punctuation mappings
+            punct_map = {
+                ':': '[:：]',  # English and Chinese colon
+                '?': '[?？]',  # English and Chinese question mark
+                '!': '[!！]',  # English and Chinese exclamation
+                '.': '[.。]',  # English and Chinese period
+                ',': '[,，]',  # English and Chinese comma
+                ';': '[;；]',  # English and Chinese semicolon
+            }
+            
+            for eng, pattern_repl in punct_map.items():
+                if eng in pattern:
+                    pattern = pattern.replace(eng, pattern_repl)
+            
+            return pattern
+        
+        question_pattern = create_flag_pattern(question_flag)
+        answer_pattern = create_flag_pattern(answer_flag)
+        
+        qa_chunks = []
+        
+        # Find all question positions using regex
+        import re
+        question_matches = list(re.finditer(question_pattern, text))
+        
+        if not question_matches:
+            # No Q&A format found, return as single chunk
+            return [{
+                'id': 'qa_1',
+                'content': text.strip(),
+                'characters': len(text.strip())
+            }]
+        
+        # Process each Q&A block (from one question to the next)
+        for i, match in enumerate(question_matches):
+            question_start = match.start()
+            question_text = match.group()
+            
+            # Find the end of this Q&A block
+            if i + 1 < len(question_matches):
+                # Next question starts here
+                next_question_start = question_matches[i + 1].start()
+                qa_block = text[question_start:next_question_start]
+            else:
+                # This is the last question, go to end of content
+                qa_block = text[question_start:]
+            
+            # Find answer flag in this block
+            answer_match = re.search(answer_pattern, qa_block)
+            if answer_match:
+                answer_start = answer_match.start()
+                question_part = qa_block[:answer_start].strip()
+                answer_part = qa_block[answer_start + len(answer_match.group()):].strip()
+                
+                # Remove the question flag from question part
+                question = question_part.replace(question_text, '', 1).strip()
+                # Remove the answer flag from answer part  
+                answer = answer_part.replace(answer_match.group(), '', 1).strip()
+                
+                if question and answer:
+                    # Check if this Q&A pair exceeds max length
+                    qa_content = f"Question: {question}\nAnswer: {answer}"
+                    if len(qa_content) > max_length:
+                        # Split long Q&A into smaller chunks
+                        words = qa_content.split()
+                        temp_chunk = ""
+                        
+                        for word in words:
+                            if len(temp_chunk) + len(word) + 1 > max_length:
+                                if temp_chunk:
+                                    qa_chunks.append({
+                                        'id': f"qa_{len(qa_chunks) + 1}",
+                                        'content': temp_chunk.strip(),
+                                        'characters': len(temp_chunk.strip())
+                                    })
+                                temp_chunk = word
+                            else:
+                                if temp_chunk:
+                                    temp_chunk += " " + word
+                                else:
+                                    temp_chunk = word
+                        
+                        # Add final chunk
+                        if temp_chunk:
+                            qa_chunks.append({
+                                'id': f"qa_{len(qa_chunks) + 1}",
+                                'content': temp_chunk.strip(),
+                                'characters': len(temp_chunk.strip())
+                            })
+                    else:
+                        qa_chunks.append({
+                            'id': f"qa_{len(qa_chunks) + 1}",
+                            'content': qa_content,
+                            'characters': len(qa_content)
+                        })
+        
+        print(f"Generated {len(qa_chunks)} Q&A chunks")
+        for chunk in qa_chunks:
+            print(f"  {chunk['id']}: {chunk['characters']} characters")
+        
+        return qa_chunks if qa_chunks else [{
+            'id': 'qa_1',
+            'content': text.strip(),
+            'characters': len(text.strip())
+        }]
     
     def _split_into_chunks(self, text: str) -> List[Dict[str, Any]]:
         """Split text into chunks based on delimiter and length settings"""
@@ -130,7 +249,7 @@ class ChunkingService:
         if not self.settings.get('qa_format', False):
             return chunks
             
-        question_flag = self.settings.get('delimiter', 'Q: ').strip()
+        question_flag = self.settings.get('question_flag', 'Q: ').strip()
         answer_flag = self.settings.get('answer_flag', 'A: ').strip()
         
         # Create regex patterns for both Chinese and English punctuation

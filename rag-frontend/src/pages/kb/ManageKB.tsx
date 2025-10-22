@@ -688,9 +688,9 @@ export default function ManageKB() {
                           </IconButton>
                         </Stack>
                         <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
-                          <Chip size="small" label="GENERAL" variant="outlined" />
-                          <Chip size="small" label="HQ" variant="outlined" />
-                          <Chip size="small" label="VECTOR" variant="outlined" />
+                          <Chip size="small" label={kb.chunking_mode || 'GENERAL'} variant="outlined" />
+                          <Chip size="small" label={kb.index_method || 'HQ'} variant="outlined" />
+                          <Chip size="small" label={kb.retrieval_mode || 'VECTOR'} variant="outlined" />
                         </Stack>
                       </Box>
                     </Stack>

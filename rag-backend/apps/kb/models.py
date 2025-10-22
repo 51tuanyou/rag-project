@@ -136,3 +136,37 @@ class Tag(models.Model):
 
 
 # KnowledgeBaseTag model is no longer needed since Tag now directly belongs to KnowledgeBase
+
+
+class RetrievalTestRecord(models.Model):
+    """Model to store retrieval test records"""
+    knowledge_base = models.ForeignKey(KnowledgeBase, on_delete=models.CASCADE, related_name='retrieval_tests')
+    query_text = models.TextField(help_text="User input query text")
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    
+    class Meta:
+        db_table = 'kb_retrieval_test_record'
+        verbose_name = 'Retrieval Test Record'
+        verbose_name_plural = 'Retrieval Test Records'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Test Record {self.id} - {self.query_text[:50]}..."
+
+
+class RetrievalTestResult(models.Model):
+    """Model to store individual retrieval test results (chunks)"""
+    test_record = models.ForeignKey(RetrievalTestRecord, on_delete=models.CASCADE, related_name='results')
+    chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name='retrieval_results')
+    similarity_score = models.FloatField(help_text="Similarity score between query and chunk")
+    rank = models.IntegerField(help_text="Rank of this result (1-based)")
+    
+    class Meta:
+        db_table = 'kb_retrieval_test_result'
+        verbose_name = 'Retrieval Test Result'
+        verbose_name_plural = 'Retrieval Test Results'
+        ordering = ['rank']
+    
+    def __str__(self):
+        return f"Result {self.rank} - Score: {self.similarity_score:.3f}"

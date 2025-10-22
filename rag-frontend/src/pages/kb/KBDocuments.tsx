@@ -406,6 +406,9 @@ export default function KBDocuments() {
             sx={{ flex: 1 }} 
           />
           <Button variant="contained" startIcon={<Add />}>ADD FILE</Button>
+          <Button variant="outlined" onClick={() => navigate(`/manage/kb/retrieval-test/${kbId}`)}>
+            Retrieval Test
+          </Button>
         </Stack>
 
         <TableContainer component={Paper} variant="outlined">

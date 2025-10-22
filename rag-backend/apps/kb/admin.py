@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import ChunkSettings, KnowledgeBase, Document, Chunk, Tag
+from .models import ChunkSettings, KnowledgeBase, Document, Chunk, Tag, RetrievalTestRecord, RetrievalTestResult
 
 
 @admin.register(ChunkSettings)

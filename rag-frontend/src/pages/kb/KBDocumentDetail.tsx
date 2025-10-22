@@ -42,7 +42,7 @@ export default function KBDocumentDetail() {
         <IconButton onClick={() => navigate('/')}><ArrowBack /></IconButton>
         <InsertDriveFileIcon fontSize="small" />
         <Typography variant="h6" sx={{ mr: 1 }}>{fileName}</Typography>
-        <Chip size="small" label="GENERAL" variant="outlined" />
+        <Chip size="small" label="Q&A" variant="outlined" />
         <Box sx={{ flex: 1 }} />
         <Chip size="small" color="success" label="AVAILABLE" />
         <Switch defaultChecked />

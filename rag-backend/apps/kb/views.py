@@ -6,7 +6,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .service.chunking_service import ChunkingService
 from .service.document_parser import DocumentParser
-from .models import ChunkSettings, KnowledgeBase, Document, Chunk, Tag
+from .models import ChunkSettings, KnowledgeBase, Document, Chunk, Tag, RetrievalTestRecord, RetrievalTestResult
 from apps.llm.models import ModelCredential
 import os
 import tempfile
@@ -230,13 +230,16 @@ def create_knowledge_base(request):
                 
                 # Create chunk records
                 for i, chunk_data in enumerate(chunks):
-                    Chunk.objects.create(
+                    chunk = Chunk.objects.create(
                         document=document,
                         chunk_id=chunk_data.get('id', f'chunk_{i+1}'),
                         content=chunk_data.get('content', ''),
                         characters=chunk_data.get('characters', 0),
                         chunk_number=i + 1
                     )
+                    # Update chunk_id to use database primary key
+                    chunk.chunk_id = str(chunk.id)
+                    chunk.save()
                 
                 # Update document status
                 document.status = 'completed'
@@ -479,24 +482,64 @@ def delete_knowledge_base(request, kb_id):
         # Get knowledge base info before deletion
         kb_name = kb.name
         
-        # Delete all chunks associated with documents in this knowledge base
+        # 1. Delete PGVector embeddings first
+        pgvector_deleted = 0
+        try:
+            from apps.agents.services.retrieval_service import RetrievalService
+            retrieval_service = RetrievalService()
+            conn = retrieval_service.get_pg_connection()
+            cursor = conn.cursor()
+            
+            # Delete embeddings from PGVector
+            delete_sql = "DELETE FROM chunk_embeddings WHERE knowledge_base_id = %s"
+            cursor.execute(delete_sql, (kb_id,))
+            pgvector_deleted = cursor.rowcount
+            
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print(f"Deleted {pgvector_deleted} embeddings from PGVector for knowledge base {kb_id}")
+        except Exception as e:
+            print(f"Warning: Failed to delete PGVector embeddings: {str(e)}")
+        
+        # 2. Delete retrieval test records and results
+        retrieval_tests_deleted = 0
+        retrieval_results_deleted = 0
+        try:
+            from apps.kb.models import RetrievalTestRecord, RetrievalTestResult
+            
+            # Delete retrieval test results first (foreign key constraint)
+            retrieval_results_deleted = RetrievalTestResult.objects.filter(
+                test_record__knowledge_base=kb
+            ).delete()[0]
+            
+            # Delete retrieval test records
+            retrieval_tests_deleted = RetrievalTestRecord.objects.filter(
+                knowledge_base=kb
+            ).delete()[0]
+            
+            print(f"Deleted {retrieval_tests_deleted} retrieval test records and {retrieval_results_deleted} results for knowledge base {kb_id}")
+        except Exception as e:
+            print(f"Warning: Failed to delete retrieval test data: {str(e)}")
+        
+        # 3. Delete all chunks associated with documents in this knowledge base
         chunks_deleted = Chunk.objects.filter(document__knowledge_base=kb).delete()
         print(f"Deleted {chunks_deleted[0]} chunks for knowledge base {kb_id}")
         
-        # Delete all documents in this knowledge base
+        # 4. Delete all documents in this knowledge base
         documents_deleted = Document.objects.filter(knowledge_base=kb).delete()
         print(f"Deleted {documents_deleted[0]} documents for knowledge base {kb_id}")
         
-        # Delete all tags associated with this knowledge base
+        # 5. Delete all tags associated with this knowledge base
         tags_deleted = Tag.objects.filter(knowledge_base=kb).delete()
         print(f"Deleted {tags_deleted[0]} tags for knowledge base {kb_id}")
         
-        # Delete chunk settings if exists
+        # 6. Delete chunk settings if exists
         if kb.chunk_settings:
             kb.chunk_settings.delete()
             print(f"Deleted chunk settings for knowledge base {kb_id}")
         
-        # Finally delete the knowledge base itself
+        # 7. Finally delete the knowledge base itself
         kb.delete()
         print(f"Deleted knowledge base {kb_id}: {kb_name}")
         
@@ -504,7 +547,10 @@ def delete_knowledge_base(request, kb_id):
             'message': f'Knowledge base "{kb_name}" deleted successfully',
             'chunks_deleted': chunks_deleted[0],
             'documents_deleted': documents_deleted[0],
-            'tags_deleted': tags_deleted[0]
+            'tags_deleted': tags_deleted[0],
+            'pgvector_embeddings_deleted': pgvector_deleted,
+            'retrieval_tests_deleted': retrieval_tests_deleted,
+            'retrieval_results_deleted': retrieval_results_deleted
         })
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -957,13 +1003,16 @@ def process_document(request):
         
         # Create new chunk records
         for i, chunk_data in enumerate(chunks):
-            Chunk.objects.create(
+            chunk = Chunk.objects.create(
                 document=document,
                 chunk_id=chunk_data.get('id', f'chunk_{i+1}'),
                 content=chunk_data.get('content', ''),
                 characters=chunk_data.get('characters', 0),
                 chunk_number=i + 1
             )
+            # Update chunk_id to use database primary key
+            chunk.chunk_id = str(chunk.id)
+            chunk.save()
         
         print(f"Created {len(chunks)} new chunks for document {document_id}")
         
@@ -1002,13 +1051,16 @@ def save_document_chunks(request):
         
         # Create new chunk records
         for chunk_data in chunks:
-            Chunk.objects.create(
+            chunk = Chunk.objects.create(
                 document=document,
                 chunk_id=chunk_data.get('chunk_id', f'chunk_{chunk_data.get("chunk_number", 1)}'),
                 content=chunk_data.get('content', ''),
                 characters=chunk_data.get('characters', 0),
                 chunk_number=chunk_data.get('chunk_number', 1)
             )
+            # Update chunk_id to use database primary key
+            chunk.chunk_id = str(chunk.id)
+            chunk.save()
         
         print(f"Created {len(chunks)} new chunks for document {document_id}")
         

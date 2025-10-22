@@ -377,11 +377,15 @@ export default function KBChunkSettings() {
         knowledgeName = fileName?.split('.')[0] || 'knowledge'
       }
       
+      // Determine the correct delimiter based on mode
+      const effectiveDelimiter = qaFormat ? questionFlag : delimiter
+      const effectiveMaxLen = qaFormat ? qaMaxLength : maxLen
+      
       navigate('/manage/kb/processing', { state: {
         files,
         knowledgeName,
-        delimiter,
-        maxLen,
+        delimiter: effectiveDelimiter,
+        maxLen: effectiveMaxLen,
         replaceSpaces,
         indexMethod,
         retrievalMode,

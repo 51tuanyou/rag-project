@@ -3,6 +3,7 @@ URL configuration for kb app
 """
 from django.urls import path
 from . import views
+from . import retrieval_test_views
 
 urlpatterns = [
     path('upload-file/', views.upload_file, name='upload-file'),
@@ -33,4 +34,8 @@ urlpatterns = [
     path('clear-document-chunks/<int:document_id>/', views.clear_document_chunks, name='clear-document-chunks'),
     path('process-document/', views.process_document, name='process-document'),
     path('save-document-chunks/', views.save_document_chunks, name='save-document-chunks'),
+    # Retrieval test endpoints
+    path('perform-retrieval-test/', retrieval_test_views.perform_retrieval_test, name='perform-retrieval-test'),
+    path('get-retrieval-test-records/<int:kb_id>/', retrieval_test_views.get_retrieval_test_records, name='get-retrieval-test-records'),
+    path('get-retrieval-test-results/<int:test_record_id>/', retrieval_test_views.get_retrieval_test_results, name='get-retrieval-test-results'),
 ]

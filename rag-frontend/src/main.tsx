@@ -9,6 +9,7 @@ import KBChunkSettings from './pages/kb/KBChunkSettings.tsx'
 import KBProcessing from './pages/kb/KBProcessing.tsx'
 import KBDocuments from './pages/kb/KBDocuments.tsx'
 import KBDocumentDetail from './pages/kb/KBDocumentDetail.tsx'
+import RetrievalTest from './pages/kb/RetrievalTest.tsx'
 import ManageLLM from './pages/llm/ManageLLM.tsx'
 
 const router = createBrowserRouter([
@@ -20,6 +21,7 @@ const router = createBrowserRouter([
   { path: '/manage/kb/processing', element: <KBProcessing /> },
   { path: '/manage/kb/documents/:kbId', element: <KBDocuments /> },
   { path: '/manage/kb/documents/:id', element: <KBDocumentDetail /> },
+  { path: '/manage/kb/retrieval-test/:kbId', element: <RetrievalTest /> },
   { path: '/manage/llm', element: <ManageLLM /> },
 ])
 
