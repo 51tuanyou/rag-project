@@ -77,6 +77,32 @@ function App() {
     const text = compose.trim()
     if (!text) return
 
+    // Check if LLM is selected
+    if (llm === '请选择LLM') {
+      const now = new Date().toLocaleString()
+      setMessages(prev => [...prev, { role: 'user', content: text }])
+      setCompose('')
+
+      setLogs(prev => [
+        ...prev,
+        `执行逻辑（${now}）：`,
+        `用户选择了知识库：${kb}`,
+        `用户选择了LLM：${llm}`,
+        `检索分块数量：${chunk}`,
+        `用户问题：${text}`,
+      ])
+
+      // Show error message from assistant
+      setTimeout(() => {
+        setMessages(prev => [
+          ...prev,
+          { role: 'assistant', content: '请选择LLM' },
+        ])
+        setLogs(prev => [...prev, '机器人提示：请选择LLM'])
+      }, 300)
+      return
+    }
+
     const now = new Date().toLocaleString()
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setCompose('')
