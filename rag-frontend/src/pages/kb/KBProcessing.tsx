@@ -15,6 +15,8 @@ import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import AutorenewIcon from '@mui/icons-material/Autorenew'
+import ErrorIcon from '@mui/icons-material/Error'
+import Tooltip from '@mui/material/Tooltip'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 // Add CSS animation for spinning icon
@@ -105,6 +107,9 @@ export default function KBProcessing() {
   const [knowledgeBaseId, setKnowledgeBaseId] = useState<number | null>(null)
   const hasInitiatedCreation = useRef(false)
   const [chunkSettings, setChunkSettings] = useState<any>(null)
+  const [vectorizationFailed, setVectorizationFailed] = useState(false)
+  const [failedDocuments, setFailedDocuments] = useState<Set<number>>(new Set())
+  const [documentErrors, setDocumentErrors] = useState<Map<number, string>>(new Map())
   
   const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
 
@@ -124,6 +129,9 @@ export default function KBProcessing() {
   // Start vectorization process
   const startVectorization = async (kbId: number) => {
     setIsVectorizing(true)
+    setVectorizationFailed(false)
+    setFailedDocuments(new Set())
+    setDocumentErrors(new Map())
     
     try {
       // Get documents for this knowledge base
@@ -134,13 +142,19 @@ export default function KBProcessing() {
       
       const data = await response.json()
       const documents = data.documents || []
+      let hasFailures = false
       
       // Process each document for vectorization
       for (const doc of documents) {
         try {
           // Get chunks for this document
           const chunksResponse = await fetch(`${API_BASE}/api/kb/get-chunks/?document_id=${doc.id}`)
-          if (!chunksResponse.ok) continue
+          if (!chunksResponse.ok) {
+            setFailedDocuments(prev => new Set([...prev, doc.id]))
+            setDocumentErrors(prev => new Map([...prev, [doc.id, 'Failed to get chunks']]))
+            hasFailures = true
+            continue
+          }
           
           const chunksData = await chunksResponse.json()
           const chunks = chunksData.chunks || []
@@ -167,21 +181,34 @@ export default function KBProcessing() {
             })
             
             if (!vectorizeResponse.ok) {
-              console.warn(`Vectorization failed for document ${doc.id}`)
+              const errorText = await vectorizeResponse.text()
+              console.warn(`Vectorization failed for document ${doc.id}: ${errorText}`)
+              setFailedDocuments(prev => new Set([...prev, doc.id]))
+              setDocumentErrors(prev => new Map([...prev, [doc.id, `Vectorization failed: ${errorText}`]]))
+              hasFailures = true
             } else {
               console.log(`Vectorization completed for document ${doc.id}`)
             }
           }
         } catch (error) {
           console.error(`Error vectorizing document ${doc.id}:`, error)
+          setFailedDocuments(prev => new Set([...prev, doc.id]))
+          setDocumentErrors(prev => new Map([...prev, [doc.id, `Error: ${error instanceof Error ? error.message : 'Unknown error'}`]]))
+          hasFailures = true
         }
       }
       
-      // All vectorization completed
-      setCompleted(true)
+      // Set completion status based on whether there were failures
+      if (hasFailures) {
+        setVectorizationFailed(true)
+        setCreationError('Some documents failed to vectorize. Please check the document status.')
+      } else {
+        setCompleted(true)
+      }
       
     } catch (error) {
       console.error('Error in vectorization process:', error)
+      setVectorizationFailed(true)
       setCreationError('Vectorization failed: ' + (error instanceof Error ? error.message : 'Unknown error'))
     } finally {
       setIsVectorizing(false)
@@ -287,17 +314,30 @@ export default function KBProcessing() {
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
           {isCreating ? 'CREATING KNOWLEDGE BASE...' : 
            isVectorizing ? '向量化处理正在进行中...' : 
+           vectorizationFailed ? 'EMBEDDING FAILED' :
            completed ? 'EMBEDDING COMPLETED' : 'EMBEDDING PROCESSING...'}
         </Typography>
         {files.map((f, i) => {
           // Extract only the filename from the path (handle both / and \ separators)
           const fileName = f.includes('/') ? f.split('/').pop() : 
                           f.includes('\\') ? f.split('\\').pop() : f
+          
+          // Determine document status
+          const isFailed = vectorizationFailed && failedDocuments.has(i + 1) // Assuming document ID is index + 1
+          const errorMessage = documentErrors.get(i + 1) || 'Unknown error'
+          
           return (
-            <Stack key={f + i} direction="row" spacing={1} alignItems="center" sx={{ mb: 1, p: 1, borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+            <Stack key={f + i} direction="row" spacing={1} alignItems="center" sx={{ mb: 1, p: 1, borderRadius: 1, border: '1px solid', borderColor: isFailed ? 'error.main' : 'divider' }}>
               <InsertDriveFileIcon fontSize="small" />
               <Typography sx={{ flex: 1 }}>{fileName}</Typography>
-              {completed ? (
+              <Typography variant="caption" sx={{ mr: 1 }}>
+                {isFailed ? 'Disabled' : completed ? 'Available' : isVectorizing ? 'Processing' : 'Pending'}
+              </Typography>
+              {isFailed ? (
+                <Tooltip title={`Failed: ${errorMessage}`} arrow>
+                  <ErrorIcon sx={{ color: 'error.main' }} />
+                </Tooltip>
+              ) : completed ? (
                 <CheckCircleIcon sx={{ color: 'success.main' }} />
               ) : isVectorizing ? (
                 <AutorenewIcon sx={{ color: 'primary.main', animation: 'spin 2s linear infinite' }} />
@@ -307,7 +347,7 @@ export default function KBProcessing() {
             </Stack>
           )
         })}
-        {(isCreating || isVectorizing || !completed) && <LinearProgress variant="indeterminate" />}
+        {(isCreating || isVectorizing || (!completed && !vectorizationFailed)) && <LinearProgress variant="indeterminate" />}
         
         {/* Error display */}
         {creationError && (
@@ -315,6 +355,11 @@ export default function KBProcessing() {
             <Typography variant="body2" color="error.main" sx={{ fontWeight: 600 }}>
               Error: {creationError}
             </Typography>
+            {vectorizationFailed && (
+              <Typography variant="body2" color="error.main" sx={{ mt: 1 }}>
+                Some documents failed to process. Please check the document status above for details.
+              </Typography>
+            )}
           </Box>
         )}
       </Paper>
@@ -331,7 +376,12 @@ export default function KBProcessing() {
 
       <Stack direction="row" spacing={1}>
         <Box sx={{ flex: 1 }} />
-        <Button variant="contained" onClick={() => navigate(`/manage/kb/documents/${knowledgeBaseId}`, { state: { files } })}>Go to document</Button>
+        <Button 
+          variant="contained" 
+          onClick={() => navigate(`/manage/kb/documents/${knowledgeBaseId}`, { state: { files } })}
+        >
+          Go to document
+        </Button>
       </Stack>
       </Box>
     </Box>
