@@ -12,6 +12,13 @@ import {
   Alert,
   AlertTitle,
 } from '@mui/material'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
+import ListItemButton from '@mui/material/ListItemButton'
+import ListItemText from '@mui/material/ListItemText'
 import Select from '@mui/material/Select'
 import MenuItem from '@mui/material/MenuItem'
 import Autocomplete from '@mui/material/Autocomplete'
@@ -21,7 +28,7 @@ import Settings from '@mui/icons-material/Settings'
 import CircleIcon from '@mui/icons-material/Circle'
 import WarningIcon from '@mui/icons-material/Warning'
 
-type ChatMessage = { role: 'assistant' | 'user'; content: string }
+type ChatMessage = { role: 'assistant' | 'user'; content: string; timestamp?: string }
 type LLMModel = { id: string; provider: string; label: string; tags?: string[]; isManagement?: boolean }
 
 function App() {
@@ -35,13 +42,16 @@ function App() {
   const [knowledgeBases, setKnowledgeBases] = useState<Array<{ id: number; name: string; display_name: string; has_tags: boolean; tag_count: number }>>([])
   const [selectedKb, setSelectedKb] = useState<{ id: number; display_name: string } | null>(null)
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null) // null: checking, true: connected, false: disconnected
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [histories, setHistories] = useState<Array<{id:number; question:string; response:string; logs:string; created_at:string}>>([])
+  const [isHistoryView, setIsHistoryView] = useState(false)
   const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
   const KB_KEY = 'xenera.kb'
   const LLM_KEY = 'xenera.llm'
   const CHUNK_KEY = 'xenera.chunk'
 
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: '你好，我是 AI 助手，有什么可以帮你？' },
+    { role: 'assistant', content: '你好，我是 AI 助手，有什么可以帮你？', timestamp: new Date().toLocaleString() },
   ])
   const [compose, setCompose] = useState('')
 
@@ -240,13 +250,14 @@ function App() {
   useEffect(() => { localStorage.setItem(CHUNK_KEY, chunk) }, [chunk])
 
   const onSend = async () => {
+    setIsHistoryView(false)
     const text = compose.trim()
     if (!text) return
 
     // Check if LLM is selected
     if (!selectedLlm || selectedLlm.isManagement) {
       const now = new Date().toLocaleString()
-      setMessages(prev => [...prev, { role: 'user', content: text }])
+      setMessages(prev => [...prev, { role: 'user', content: text, timestamp: now }])
       setCompose('')
 
       setLogs(prev => [
@@ -262,7 +273,7 @@ function App() {
       setTimeout(() => {
         setMessages(prev => [
           ...prev,
-          { role: 'assistant', content: '请选择LLM' },
+          { role: 'assistant', content: '请选择LLM', timestamp: new Date().toLocaleString() },
         ])
         setLogs(prev => [...prev, '机器人提示：请选择LLM'])
       }, 300)
@@ -270,7 +281,7 @@ function App() {
     }
 
     const now = new Date().toLocaleString()
-    setMessages(prev => [...prev, { role: 'user', content: text }])
+    setMessages(prev => [...prev, { role: 'user', content: text, timestamp: now }])
     setCompose('')
 
     // Clear previous logs and add new ones
@@ -311,7 +322,7 @@ function App() {
       // Add response to messages
       setMessages(prev => [
         ...prev,
-        { role: 'assistant', content: data.response }
+        { role: 'assistant', content: data.response, timestamp: new Date().toLocaleString() }
       ])
 
       // Update logs with detailed execution steps
@@ -327,7 +338,7 @@ function App() {
       const errorMessage = error.message || '未知错误'
       setMessages(prev => [
         ...prev,
-        { role: 'assistant', content: `❌ ${errorMessage}` }
+        { role: 'assistant', content: `❌ ${errorMessage}`, timestamp: new Date().toLocaleString() }
       ])
 
       setLogs(prev => [
@@ -505,7 +516,10 @@ function App() {
                         color: m.role === 'user' ? 'primary.contrastText' : 'text.primary',
                       }}
                     >
-                      <Typography variant="caption" sx={{ opacity: 0.8 }}>{m.role === 'user' ? '用户' : '机器人'}</Typography>
+                      <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                        {m.role === 'user' ? '用户' : '机器人'}
+                        {m.timestamp ? ` · ${m.timestamp}` : ''}
+                      </Typography>
                       <Typography variant="body2">{m.content}</Typography>
                     </Paper>
                   </Box>
@@ -531,7 +545,10 @@ function App() {
 
         <Box sx={{ width: { xs: '100%', md: '33.333%' } }}>
           <Paper variant="outlined" sx={{ p: 2, height: '100%', minHeight: 360, display: 'flex', flexDirection: 'column' }}>
-            <Typography variant="subtitle1" fontWeight={600}>执行日志：</Typography>
+            <Stack direction="row" alignItems="center" justifyContent="space-between">
+              <Typography variant="subtitle1" fontWeight={600}>{isHistoryView ? '执行日志（历史记录）：' : '执行日志：'}</Typography>
+              <Button size="small" variant="outlined" onClick={() => { setHistoryOpen(true); (async () => { try { const res = await fetch(`${API_BASE}/api/agents/histories/?limit=100`); const d = await res.json(); setHistories(d.results || []);} catch {} })() }}>查看历史记录</Button>
+            </Stack>
             <Box sx={{ mt: 1, flex: 1, maxHeight: '60vh', overflowY: 'auto', overflowX: 'hidden', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', fontSize: 13 }}>
               {logs.length ? renderLogs : '（空）'}
               {/* Invisible element to scroll to */}
@@ -539,6 +556,34 @@ function App() {
             </Box>
           </Paper>
         </Box>
+        
+        {/* 历史记录弹窗 */}
+        <Dialog open={historyOpen} onClose={() => setHistoryOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle>历史查询记录</DialogTitle>
+          <DialogContent dividers>
+            <List>
+              {histories.map(h => (
+                <ListItem key={h.id} disableGutters>
+                  <ListItemButton onClick={() => {
+                    setMessages([
+                      { role: 'user', content: `${h.question}（历史记录）`, timestamp: h.created_at },
+                      { role: 'assistant', content: `${h.response}（历史记录）`, timestamp: h.created_at },
+                    ])
+                    setLogs((h.logs || '').split('\n'))
+                    setIsHistoryView(true)
+                    setHistoryOpen(false)
+                    setTimeout(() => { scrollToBottomMessages(); scrollToBottomLogs(); }, 50)
+                  }}>
+                    <ListItemText primary={h.question} secondary={h.created_at} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+              {histories.length === 0 && (
+                <Typography variant="body2" color="text.secondary">暂无历史记录</Typography>
+              )}
+            </List>
+          </DialogContent>
+        </Dialog>
       </Box>
     </Container>
   )

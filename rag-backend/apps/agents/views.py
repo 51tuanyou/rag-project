@@ -8,6 +8,7 @@ from .services.vectorization_service import VectorizationService
 from .services.retrieval_service import RetrievalService
 from apps.llm.service.llm_service import LLMService
 from apps.llm.models import ModelCredential
+from .models import QueryHistory
 from apps.kb.models import KnowledgeBase
 import asyncio
 
@@ -236,6 +237,16 @@ def chat(request):
             response_text = response_text[:max_tokens] + "..."
             logs.append(f"回答已截断至 {max_tokens} 个字符")
         
+        # Persist query history (best-effort)
+        try:
+            QueryHistory.objects.create(
+                question=message,
+                response=response_text,
+                logs="\n".join(logs),
+            )
+        except Exception:
+            pass
+        
         return Response({
             'response': response_text,
             'logs': logs,
@@ -243,5 +254,26 @@ def chat(request):
             'max_tokens': max_tokens
         })
         
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def histories(request):
+    """List saved query histories."""
+    try:
+        limit = int(request.GET.get('limit', 50))
+        items = QueryHistory.objects.all()[:limit]
+        data = [
+            {
+                'id': h.id,
+                'question': h.question,
+                'response': h.response,
+                'logs': h.logs,
+                'created_at': h.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            }
+            for h in items
+        ]
+        return Response({'results': data})
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
