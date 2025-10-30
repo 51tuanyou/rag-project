@@ -7,4 +7,5 @@ from . import views
 urlpatterns = [
     path('vectorize-chunks/', views.vectorize_chunks, name='vectorize-chunks'),
     path('search-similar-chunks/', views.search_similar_chunks, name='search-similar-chunks'),
+    path('chat/', views.chat, name='chat'),
 ]

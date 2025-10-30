@@ -124,7 +124,7 @@ class RetrievalService:
                 similar_chunks.append({
                     'id': f'chunk-{row["chunk_id"]}',
                     'content': row['content'],
-                    'score': round(float(row['similarity_score']), 3),
+                    'similarity_score': round(float(row['similarity_score']), 3),
                     'source_document': file_name,
                     'character_count': row['characters'],
                     'rank': i + 1,
@@ -161,7 +161,7 @@ class RetrievalService:
             for chunk_data in similar_chunks:
                 db_results.append({
                     'chunk_id': chunk_data['chunk_id'],
-                    'similarity_score': chunk_data['score'],
+                    'similarity_score': chunk_data['similarity_score'],
                     'rank': chunk_data['rank']
                 })
             

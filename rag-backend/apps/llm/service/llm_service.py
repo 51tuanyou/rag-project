@@ -18,22 +18,62 @@ class LLMService:
         Generate response using the specified model credential
         """
         try:
-            # For now, use a simple fallback method
-            # In a real implementation, this would call the actual LLM API
-            return self._fallback_response(prompt)
+            # Get API credentials
+            api_key = self._get_api_key(model_credential)
+            base_url = self._get_base_url(model_credential)
+            
+            # Call the appropriate chat API based on provider
+            if model_credential.provider.slug == 'openai':
+                return self._call_openai_chat(prompt, api_key, base_url, model_credential, max_tokens)
+            elif model_credential.provider.slug == 'ollama':
+                return self._call_ollama_chat(prompt, base_url, model_credential, max_tokens)
+            else:
+                # Fallback for unsupported providers
+                return self._fallback_response(prompt)
         except Exception as e:
-            print(f"LLM API call failed: {e}")
-            return self._fallback_response(prompt)
+            error_msg = str(e)
+            print(f"LLM API call failed for model {model_credential.model_name}: {error_msg}")
+            
+            # Check if it's a model not found error
+            if "model_not_found" in error_msg.lower() or "does not exist" in error_msg.lower():
+                return f"错误：模型 '{model_credential.model_name}' 不存在。请选择其他可用的模型。"
+            elif "invalid_api_key" in error_msg.lower() or "unauthorized" in error_msg.lower():
+                return f"错误：API密钥无效。请检查 {model_credential.provider.name} 的API配置。"
+            elif "rate_limit" in error_msg.lower():
+                return f"错误：API调用频率超限。请稍后再试。"
+            else:
+                return f"错误：调用模型 '{model_credential.model_name}' 时发生错误：{error_msg}"
     
     def _fallback_response(self, prompt: str) -> str:
         """
         Fallback response when LLM is not available
         """
-        # Simple word counting fallback
+        # Return a more informative error message instead of word count
+        return "抱歉，当前选择的LLM模型不可用。请检查模型配置或选择其他可用的模型。"
+    
+    def _clean_response(self, content: str) -> str:
+        """
+        Clean response content by removing thinking tags and reasoning
+        """
         import re
-        words = [word for word in re.split(r'\s+', prompt.strip()) if word]
-        words = [word for word in words if re.search(r'[a-zA-Z0-9\u4e00-\u9fff]', word)]
-        return str(len(words))
+        
+        # 移除各种思考标签
+        patterns = [
+            r'<think>.*?</think>',
+            r'<think>.*?</think>',
+            r'<reasoning>.*?</reasoning>',
+            r'<think>.*?',
+            r'<think>.*?',
+            r'<reasoning>.*?',
+        ]
+        
+        for pattern in patterns:
+            content = re.sub(pattern, '', content, flags=re.DOTALL)
+        
+        # 清理多余的空白
+        content = content.strip()
+        
+        return content
     
     async def create_embeddings(self, texts: List[str], model: ModelCredential) -> List[List[float]]:
         """
@@ -243,3 +283,76 @@ class LLMService:
         
         print(f"Successfully created {len(embeddings)} Ollama embeddings")
         return embeddings
+    
+    def _call_openai_chat(self, prompt: str, api_key: str, base_url: str, model: ModelCredential, max_tokens: int) -> str:
+        """Call OpenAI chat completion API"""
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json'
+        }
+        
+        data = {
+            'model': model.model_id,
+            'messages': [
+                {'role': 'user', 'content': prompt}
+            ],
+            'max_tokens': max_tokens,
+            'temperature': 0.3,  # 降低温度以获得更稳定的回答
+            'stop': ['<think>', '<think>', '<reasoning>']  # 阻止生成思考标签
+        }
+        
+        response = requests.post(
+            f'{base_url}/chat/completions',
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            content = result['choices'][0]['message']['content'].strip()
+            # 清理任何可能生成的思考标签
+            content = self._clean_response(content)
+            return content
+        else:
+            error_detail = response.text
+            print(f"OpenAI API error for model {model.model_id}: {response.status_code} - {error_detail}")
+            raise Exception(f"OpenAI API error: {response.status_code} - {error_detail}")
+    
+    def _call_ollama_chat(self, prompt: str, base_url: str, model: ModelCredential, max_tokens: int) -> str:
+        """Call Ollama chat API"""
+        data = {
+            'model': model.model_id,
+            'prompt': prompt,
+            'stream': False,
+            'options': {
+                'num_predict': max_tokens,
+                'temperature': 0.3,  # 降低温度以获得更稳定的回答
+                'stop': ['<think>', '<think>', '<reasoning>']  # 阻止生成思考标签
+            }
+        }
+        
+        print(f"Ollama API call - Model: {model.model_id}, Base URL: {base_url}")
+        print(f"Ollama API call - Prompt length: {len(prompt)}")
+        print(f"Ollama API call - Max tokens: {max_tokens}")
+        
+        response = requests.post(
+            f'{base_url}/api/generate',
+            json=data,
+            timeout=30
+        )
+        
+        print(f"Ollama API response - Status: {response.status_code}")
+        print(f"Ollama API response - Text: {response.text[:500]}...")
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"Ollama API result keys: {result.keys()}")
+            content = result['response'].strip()
+            print(f"Ollama API raw response: {content[:200]}...")
+            # 清理任何可能生成的思考标签
+            content = self._clean_response(content)
+            print(f"Ollama API cleaned response: {content[:200]}...")
+            return content
+        else:
+            raise Exception(f"Ollama API error: {response.status_code} - {response.text}")
