@@ -353,7 +353,7 @@ function App() {
   return (
     <Container maxWidth="lg" sx={{ py: 2 }}>
       <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-        Xenera RAG Tool
+        RAG Tool
       </Typography>
       
       {/* Backend Connection Status Alert */}

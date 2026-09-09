@@ -12,9 +12,10 @@ class LlmConfig(AppConfig):
         def seed_default_providers(**kwargs):
             defaults = [
                 ("openai", "OpenAI"),
-                ("deepseek", "deepseek"),
+                ("deepseek", "DeepSeek"),
                 ("tongyi", "TONGYI"),
                 ("ollama", "Ollama"),
+                ("doubao", "DouBao"),
             ]
             for slug, name in defaults:
                 Provider.objects.get_or_create(slug=slug, defaults={"display_name": name})

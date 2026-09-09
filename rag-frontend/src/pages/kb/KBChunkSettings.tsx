@@ -844,7 +844,7 @@ export default function KBChunkSettings() {
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
       <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
         <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-          Xenera RAG Tool
+          RAG Tool
         </Typography>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
         <Typography variant="h6">Chunk Settings</Typography>
