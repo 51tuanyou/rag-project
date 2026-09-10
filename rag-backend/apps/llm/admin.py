@@ -24,7 +24,8 @@ class ModelCredentialAdmin(admin.ModelAdmin):
         "model_id",
         "model_name",
         "model_type",
+        "completion_mode",
         "enabled",
     )
-    list_filter = ("provider", "model_type", "enabled")
+    list_filter = ("provider", "model_type", "completion_mode", "enabled")
     search_fields = ("model_id", "model_name", "provider__slug")

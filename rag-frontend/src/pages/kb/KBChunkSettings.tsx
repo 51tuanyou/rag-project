@@ -408,14 +408,14 @@ export default function KBChunkSettings() {
   useEffect(() => {
     const loadEmbeddingModels = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/llm/models/?enabled=true&model_type=TEXT EMBEDDING`)
+        const res = await fetch(`${API_BASE}/api/llm/models/?enabled=true&model_type=${encodeURIComponent('Text Embedding')}`)
         const data = await res.json()
         const models = data.results || data
         const groupedModels = models.map((model: any) => ({
           id: model.id.toString(),
           provider: model.provider,
           label: model.model_name,
-          tags: ['TEXT EMBEDDING']
+          tags: ['Text Embedding']
         }))
         
         // Add management option
@@ -1142,7 +1142,7 @@ export default function KBChunkSettings() {
                     <Paper elevation={3} style={{ position: 'absolute', left: 'calc(100% + 8px)', top: 0, width: 240, padding: 12 }}>
                       <Typography fontWeight={600}>{option.label}</Typography>
                       <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
-                        {(option.tags ?? ['TEXT EMBEDDING']).map(t => <Chip key={t} size="small" label={t} />)}
+                        {(option.tags ?? ['Text Embedding']).map(t => <Chip key={t} size="small" label={t} />)}
                       </Stack>
                     </Paper>
                   )}

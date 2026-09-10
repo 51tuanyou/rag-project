@@ -32,17 +32,37 @@ class ProviderApiKey(models.Model):
 class ModelCredential(models.Model):
     """Per-model connection details such as base URL and capabilities."""
 
+    class ModelType(models.TextChoices):
+        LLM = "LLM", "LLM"
+        TEXT_EMBEDDING = "Text Embedding", "Text Embedding"
+        SPEECH2TEXT = "Speech2text", "Speech2text"
+        MODERATION = "Moderation", "Moderation"
+        TTS = "TTS", "TTS"
+
+    class CompletionMode(models.TextChoices):
+        CHAT = "Chat", "Chat"
+        COMPLETION = "completion", "completion"
+        EMBEDDING = "embedding", "embedding"
+
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, related_name="models")
     model_id = models.CharField(max_length=120)
     model_name = models.CharField(max_length=120)
-    model_type = models.CharField(max_length=50)  # e.g. LLM, TEXT EMBEDDING
+    model_type = models.CharField(
+        max_length=50,
+        choices=ModelType.choices,
+        default=ModelType.LLM,
+    )
     base_url = models.URLField(max_length=300, blank=True, null=True)
     # Optional per-model overrides
     secret = models.TextField(blank=True, null=True)
     organization = models.CharField(max_length=120, blank=True, null=True)
     context_size = models.PositiveIntegerField(default=4096)
     max_tokens = models.PositiveIntegerField(default=4096)
-    completion_mode = models.CharField(max_length=30, default="Chat")  # Chat/Completion
+    completion_mode = models.CharField(
+        max_length=30,
+        choices=CompletionMode.choices,
+        default=CompletionMode.CHAT,
+    )
     vision_support = models.BooleanField(default=False)
     function_call_support = models.BooleanField(default=False)
     enabled = models.BooleanField(default=True)

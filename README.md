@@ -93,9 +93,25 @@ docker compose up -d --build
 
 ### 4. Open the app
 
-- Frontend: http://localhost
+- Frontend: http://localhost (or `http://<server-ip>` on a remote host)
 - Backend API: http://localhost:8000
-- Admin: http://localhost:8000/admin/
+- Admin: http://localhost/admin/ (nginx) or http://localhost:8000/admin/
+
+### 5. Create Django admin superuser (Docker)
+
+Do **not** run `pdm run python manage.py createsuperuser` on the host. Run it **inside** `rag-backend`:
+
+```bash
+docker exec -it rag-backend python manage.py createsuperuser
+```
+
+It prompts for username, email, and password. Then log in at `/admin/`.
+
+With username/email flags (password still prompted):
+
+```bash
+docker exec -it rag-backend python manage.py createsuperuser --username admin --email admin@example.com
+```
 
 ### Networking overview
 
@@ -124,6 +140,11 @@ docker compose logs -f backend
 docker compose logs -f frontend
 docker compose restart backend
 docker compose down
+
+# Create Django admin user (inside container — not on the host)
+docker exec -it rag-backend python manage.py createsuperuser
+# optional:
+# docker exec -it rag-backend python manage.py createsuperuser --username admin --email admin@example.com
 
 # Connectivity check
 docker exec -it rag-backend python -c "import socket; s=socket.create_connection(('postgres-ctr',5432),5); print('OK'); s.close()"

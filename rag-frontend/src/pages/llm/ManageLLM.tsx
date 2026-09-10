@@ -570,9 +570,9 @@ export default function ManageLLM() {
               <Typography variant="subtitle2" sx={{ mb: 1 }}>Model Type *</Typography>
               <RadioGroup value={form.modelType} onChange={(_, v) => setForm({ ...form, modelType: v })}>
                 <FormControlLabel value="LLM" control={<Radio />} label="LLM" />
-                <FormControlLabel value="TEXT EMBEDDING" control={<Radio />} label="Text Embedding" />
-                <FormControlLabel value="SPEECH2TEXT" control={<Radio />} label="Speech2text" />
-                <FormControlLabel value="MODERATION" control={<Radio />} label="Moderation" />
+                <FormControlLabel value="Text Embedding" control={<Radio />} label="Text Embedding" />
+                <FormControlLabel value="Speech2text" control={<Radio />} label="Speech2text" />
+                <FormControlLabel value="Moderation" control={<Radio />} label="Moderation" />
                 <FormControlLabel value="TTS" control={<Radio />} label="TTS" />
               </RadioGroup>
             </Box>
