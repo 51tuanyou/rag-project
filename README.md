@@ -2,12 +2,16 @@
 
 RAG project with a Django backend and a React + Vite frontend.
 
+**Latest branch:** `dev-01-temp`
+
 ## Project structure
 
 ```
 rag-project/
-├── rag-backend/    # Django API
-└── rag-frontend/   # React + Vite UI
+├── docker-compose.yml   # App services only (no database container)
+├── .env.example         # Env template for Docker / local
+├── rag-backend/         # Django API
+└── rag-frontend/        # React + Vite UI
 ```
 
 ## Tech stack
@@ -16,10 +20,11 @@ rag-project/
 
 | Piece | Choice |
 |--------|--------|
-| Language | Python 3.12.7 |
-| Framework | Django 5.2.7 |
+| Language | Python 3.12 |
+| Framework | Django 5.2 + DRF |
 | Package manager | PDM |
-| Database | SQLite |
+| Database | Existing PostgreSQL (env-configured) |
+| Vectors | Existing PGVector (env-configured) |
 
 ### Frontend (`rag-frontend`)
 
@@ -27,90 +32,112 @@ rag-project/
 |--------|--------|
 | UI | React 19 + TypeScript |
 | Bundler | Vite 7 |
-| CSS | Tailwind CSS 3.4 + PostCSS + Autoprefixer |
-| Lint / format | ESLint + Prettier |
+| UI libs | MUI |
 | Package manager | pnpm |
 
 ### Default URLs
 
-| Service | URL |
-|---------|-----|
-| Frontend | http://localhost:5173 |
-| Backend | http://127.0.0.1:8000 |
-| Django admin | http://127.0.0.1:8000/admin/ |
+| Mode | Frontend | Backend |
+|------|----------|---------|
+| Local conda/dev | http://localhost:5173 | http://127.0.0.1:8000 |
+| Docker Compose | http://localhost | http://localhost:8000 |
 
-> Frontend and backend are not wired together yet (no API proxy / CORS). Start them independently.
+## Docker Compose deploy (recommended)
 
-## Prerequisites
+Uses **existing** Postgres / PGVector. Compose does **not** start a database container.
+
+### 1. Configure environment
+
+```powershell
+cd d:\projects\51tuanyou\rag-project
+copy .env.example .env
+```
+
+Edit `.env` and point DB hosts at your existing instance:
+
+| Variable | Typical value when DB is on the Docker host |
+|----------|---------------------------------------------|
+| `POSTGRES_HOST` | `host.docker.internal` |
+| `PGVECTOR_HOST` | `host.docker.internal` |
+| `POSTGRES_*` / `PGVECTOR_*` | Your real DB name / user / password |
+| `VITE_API_BASE` | `http://localhost:8000` (browser → backend) |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost,http://127.0.0.1` |
+
+If Postgres runs on another machine, set `POSTGRES_HOST` / `PGVECTOR_HOST` to that IP/hostname instead.
+
+Ensure Postgres accepts connections from Docker (listen address / `pg_hba.conf`).
+
+### 2. Build & start
+
+```powershell
+docker compose up -d --build
+```
+
+### 3. Open the app
+
+- Frontend: http://localhost
+- Backend API: http://localhost:8000
+- Admin: http://localhost:8000/admin/
+
+### Useful Compose commands
+
+```powershell
+docker compose ps
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose restart backend
+docker compose down
+```
+
+### Notes
+
+- Backend entrypoint waits for Postgres, then runs `migrate`.
+- Ollama on the host should use `OLLAMA_API_BASE=http://host.docker.internal:11434`.
+- Frontend build bakes in `VITE_API_BASE`; rebuild frontend after changing it.
+
+---
+
+## Local setup with conda
+
+### Prerequisites
 
 - [Conda](https://docs.conda.io/) (Miniconda / Anaconda)
-- Backend uses PDM inside the conda env
-- Frontend uses Node.js + pnpm (via conda or system install)
-
-## Setup & start with conda
+- Existing PostgreSQL + PGVector (optional for local SQLite if `USE_POSTGRES=False`)
 
 ### 1. Backend
 
 ```powershell
-# Create & activate env
 conda create -n rag-backend python=3.12.7 -y
 conda activate rag-backend
 
-# Install PDM, then project deps
 pip install pdm
 cd rag-backend
 pdm install
 
-# First-time DB migration
+# Configure rag-backend/.env (see env.example)
 pdm run python manage.py migrate
-
-# Start Django
 pdm run python manage.py runserver
-```
-
-Without PDM (pip only):
-
-```powershell
-conda activate rag-backend
-cd rag-backend
-pip install "django>=5.2.7"
-python manage.py migrate
-python manage.py runserver
 ```
 
 ### 2. Frontend
 
-Open a **new** terminal:
-
 ```powershell
-# Create & activate env
 conda create -n rag-frontend nodejs=22 -y
 conda activate rag-frontend
 
-# Enable pnpm
 corepack enable
 cd rag-frontend
 pnpm install
-
-# Start Vite
 pnpm dev
 ```
 
-If Node.js and pnpm are already on your PATH, you can skip the conda frontend env and run:
-
-```powershell
-cd rag-frontend
-pnpm install
-pnpm dev
-```
-
-## Quick start checklist
+### Quick start checklist
 
 1. Terminal A: `conda activate rag-backend` → `cd rag-backend` → `pdm run python manage.py runserver`
-2. Terminal B: `conda activate rag-frontend` (or system Node) → `cd rag-frontend` → `pnpm dev`
+2. Terminal B: `conda activate rag-frontend` → `cd rag-frontend` → `pnpm dev`
 3. Open http://localhost:5173 and http://127.0.0.1:8000
 
-## Useful commands
+## Useful local commands
 
 ### Backend
 
@@ -126,8 +153,8 @@ pdm run python manage.py runserver
 ```powershell
 cd rag-frontend
 pnpm install
-pnpm dev      # development server
-pnpm build    # production build
-pnpm preview  # preview production build
+pnpm dev
+pnpm build
+pnpm preview
 pnpm lint
 ```
