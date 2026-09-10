@@ -1,240 +1,160 @@
-# RAG System
+# rag-project
 
-A complete Retrieval-Augmented Generation (RAG) system with vector similarity search capabilities, built with Django backend and React frontend.
+RAG project with a Django backend and a React + Vite frontend.
 
-## Project Structure
+**Latest branch:** `dev-01-temp`
+
+## Project structure
 
 ```
-rag-system/
-├── rag-backend/          # Django backend
-│   ├── apps/
-│   │   ├── agents/       # AI agents and vectorization
-│   │   ├── kb/          # Knowledge base management
-│   │   └── llm/         # LLM model management
-│   ├── manage.py
-│   └── README.md
-├── rag-frontend/        # React frontend
-│   ├── src/
-│   │   ├── pages/
-│   │   └── components/
-│   ├── package.json
-│   └── README.md
-└── README.md           # This file
+rag-project/
+├── docker-compose.yml   # App services only (no database container)
+├── .env.example         # Env template for Docker / local
+├── rag-backend/         # Django API
+└── rag-frontend/        # React + Vite UI
 ```
 
-## Quick Start
+## Tech stack
+
+### Backend (`rag-backend`)
+
+| Piece | Choice |
+|--------|--------|
+| Language | Python 3.12 |
+| Framework | Django 5.2 + DRF |
+| Package manager | PDM |
+| Database | Existing PostgreSQL (env-configured) |
+| Vectors | Existing PGVector (env-configured) |
+
+### Frontend (`rag-frontend`)
+
+| Piece | Choice |
+|--------|--------|
+| UI | React 19 + TypeScript |
+| Bundler | Vite 7 |
+| UI libs | MUI |
+| Package manager | pnpm |
+
+### Default URLs
+
+| Mode | Frontend | Backend |
+|------|----------|---------|
+| Local conda/dev | http://localhost:5173 | http://127.0.0.1:8000 |
+| Docker Compose | http://localhost | http://localhost:8000 |
+
+## Docker Compose deploy (recommended)
+
+Uses **existing** Postgres / PGVector. Compose does **not** start a database container.
+
+### 1. Configure environment
+
+```powershell
+cd d:\projects\51tuanyou\rag-project
+copy .env.example .env
+```
+
+Edit `.env` and point DB hosts at your existing instance:
+
+| Variable | Typical value when DB is on the Docker host |
+|----------|---------------------------------------------|
+| `POSTGRES_HOST` | `host.docker.internal` |
+| `PGVECTOR_HOST` | `host.docker.internal` |
+| `POSTGRES_*` / `PGVECTOR_*` | Your real DB name / user / password |
+| `VITE_API_BASE` | `http://localhost:8000` (browser → backend) |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost,http://127.0.0.1` |
+
+If Postgres runs on another machine, set `POSTGRES_HOST` / `PGVECTOR_HOST` to that IP/hostname instead.
+
+Ensure Postgres accepts connections from Docker (listen address / `pg_hba.conf`).
+
+### 2. Build & start
+
+```powershell
+docker compose up -d --build
+```
+
+### 3. Open the app
+
+- Frontend: http://localhost
+- Backend API: http://localhost:8000
+- Admin: http://localhost:8000/admin/
+
+### Useful Compose commands
+
+```powershell
+docker compose ps
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose restart backend
+docker compose down
+```
+
+### Notes
+
+- Backend entrypoint waits for Postgres, then runs `migrate`.
+- Ollama on the host should use `OLLAMA_API_BASE=http://host.docker.internal:11434`.
+- Frontend build bakes in `VITE_API_BASE`; rebuild frontend after changing it.
+
+---
+
+## Local setup with conda
 
 ### Prerequisites
 
-- Python 3.12+
-- Node.js 18+
-- PostgreSQL with PGVector extension
-- uv (Python package manager)
-- pnpm (Node.js package manager)
+- [Conda](https://docs.conda.io/) (Miniconda / Anaconda)
+- Existing PostgreSQL + PGVector (optional for local SQLite if `USE_POSTGRES=False`)
 
-### 1. Backend Setup
+### 1. Backend
 
-```bash
-cd rag-backend
+```powershell
+conda create -n rag-backend python=3.12.7 -y
+conda activate rag-backend
 
-# Create and activate virtual environment
-uv venv
-.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # macOS/Linux
-
-# Install dependencies
 pip install pdm
+cd rag-backend
 pdm install
 
-# Setup database (PostgreSQL with PGVector)
-# See rag-backend/README.md for detailed instructions
-
-# Run migrations
+# Configure rag-backend/.env (see env.example)
 pdm run python manage.py migrate
-
-# Start backend server
 pdm run python manage.py runserver
 ```
 
-Backend will be available at `http://localhost:8000`
+### 2. Frontend
 
-### 2. Frontend Setup
+```powershell
+conda create -n rag-frontend nodejs=22 -y
+conda activate rag-frontend
 
-```bash
+corepack enable
 cd rag-frontend
-
-# Install dependencies
 pnpm install
-
-# Start development server
 pnpm dev
 ```
 
-Frontend will be available at `http://localhost:5173`
+### Quick start checklist
 
-## Features
+1. Terminal A: `conda activate rag-backend` → `cd rag-backend` → `pdm run python manage.py runserver`
+2. Terminal B: `conda activate rag-frontend` → `cd rag-frontend` → `pnpm dev`
+3. Open http://localhost:5173 and http://127.0.0.1:8000
 
-### Backend Features
-- **Knowledge Base Management**: Create and manage knowledge bases
-- **Document Processing**: Upload and process documents (PDF, DOCX, TXT, etc.)
-- **Vector Search**: PGVector-based similarity search
-- **Retrieval Testing**: Test retrieval effectiveness
-- **LLM Integration**: Support for multiple LLM providers (OpenAI, Ollama, etc.)
-
-### Frontend Features
-- **Knowledge Base Dashboard**: Manage knowledge bases and documents
-- **Document Upload**: Drag-and-drop document upload interface
-- **Retrieval Testing**: Interactive vector similarity testing
-- **Chunk Management**: View and manage document chunks
-- **LLM Configuration**: Configure and manage LLM models
-
-## Key Components
-
-### Knowledge Base Management
-- Create and configure knowledge bases
-- Upload and process documents
-- Configure chunking settings
-- Manage document chunks
-
-### Retrieval Testing
-- Test vector similarity search
-- View similarity scores
-- Historical test records
-- Real-time retrieval testing
-
-### LLM Integration
-- Multiple provider support (OpenAI, Ollama)
-- Embedding model configuration
-- API key management
-- Model credential management
-
-## API Endpoints
-
-### Knowledge Base
-- `POST /api/kb/create-knowledge-base/` - Create knowledge base
-- `GET /api/kb/get-knowledge-bases/` - List knowledge bases
-- `GET /api/kb/get-documents/` - Get documents for a knowledge base
-
-### Retrieval Testing
-- `POST /api/kb/perform-retrieval-test/` - Perform retrieval test
-- `GET /api/kb/get-retrieval-test-records/{kb_id}/` - Get test records
-- `GET /api/kb/get-retrieval-test-results/{test_record_id}/` - Get test results
-
-### Document Management
-- `POST /api/kb/upload-file/` - Upload document
-- `POST /api/kb/process-document/` - Process document
-- `GET /api/kb/get-chunks/` - Get document chunks
-
-## Technology Stack
+## Useful local commands
 
 ### Backend
-- **Django 5.2.7+**: Web framework
-- **Django REST Framework 3.15.2+**: API framework
-- **PostgreSQL**: Database with PGVector extension
-- **psycopg2-binary 2.9.9+**: PostgreSQL adapter
-- **numpy 1.24.0+**: Numerical computing
-- **pandas 2.0.0+**: Data manipulation
 
-### Frontend
-- **React 18.2.0+**: UI framework
-- **TypeScript 5.0+**: Type safety
-- **Vite 5.0+**: Build tool
-- **Material-UI 5.15.0+**: UI components
-- **pnpm**: Package manager
-
-## Development
-
-### Backend Development
-```bash
+```powershell
 cd rag-backend
-.venv\Scripts\activate
+pdm run python manage.py migrate
+pdm run python manage.py createsuperuser
 pdm run python manage.py runserver
 ```
 
-### Frontend Development
-```bash
+### Frontend
+
+```powershell
 cd rag-frontend
+pnpm install
 pnpm dev
+pnpm build
+pnpm preview
+pnpm lint
 ```
-
-### Running Tests
-```bash
-# Backend tests
-cd rag-backend
-pdm run python manage.py test
-
-# Frontend tests (if configured)
-cd rag-frontend
-pnpm test
-```
-
-## Deployment
-
-### Backend Deployment
-1. Set up PostgreSQL with PGVector
-2. Configure environment variables
-3. Run migrations: `pdm run python manage.py migrate`
-4. Collect static files: `pdm run python manage.py collectstatic`
-5. Deploy with your preferred WSGI server (Gunicorn, uWSGI, etc.)
-
-### Frontend Deployment
-1. Build for production: `pnpm build`
-2. Deploy the `dist/` directory to your web server
-3. Configure reverse proxy for API calls
-
-## Environment Variables
-
-### Backend (.env)
-```env
-PGVECTOR_HOST=localhost
-PGVECTOR_PORT=5432
-PGVECTOR_DB=rag_vectors
-PGVECTOR_USER=postgres
-PGVECTOR_PASSWORD=your_password
-SECRET_KEY=your-secret-key-here
-DEBUG=True
-```
-
-### Frontend (.env)
-```env
-VITE_API_BASE=http://localhost:8000
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Database Connection Issues**
-   - Ensure PostgreSQL is running
-   - Check PGVector extension is installed
-   - Verify connection parameters
-
-2. **API Connection Issues**
-   - Ensure backend server is running
-   - Check CORS settings
-   - Verify API endpoints
-
-3. **Build Issues**
-   - Clear cache and reinstall dependencies
-   - Check Node.js and Python versions
-   - Verify all prerequisites are installed
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
-
-## License
-
-MIT License
-
-## Support
-
-For issues and questions:
-1. Check the individual README files in `rag-backend/` and `rag-frontend/`
-2. Review the troubleshooting sections
-3. Check the API documentation
-4. Create an issue in the repository
