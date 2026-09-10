@@ -204,6 +204,7 @@ export default function KBChunkSettings() {
   const [highlighted, setHighlighted] = useState<EmbeddingModel | null>(null)
   const [rerankEnabled, setRerankEnabled] = useState(() => localStorage.getItem('kb.rerankEnabled') === 'true')
   const [rerankModel, setRerankModel] = useState(() => localStorage.getItem('kb.rerankModel') || 'qte-rerank')
+  const [rerankOptions, setRerankOptions] = useState<string[]>(['qte-rerank'])
   const [retrievalMode, setRetrievalMode] = useState<'vector' | 'fulltext' | 'hybrid'>(() => (localStorage.getItem('kb.retrievalMode') as 'vector' | 'fulltext' | 'hybrid') || 'vector')
   const [topK, setTopK] = useState(() => parseInt(localStorage.getItem('kb.topK') || '3'))
   const [scoreEnabled, setScoreEnabled] = useState(() => localStorage.getItem('kb.scoreEnabled') === 'true')
@@ -457,6 +458,28 @@ export default function KBChunkSettings() {
       }
     }
     loadEmbeddingModels()
+  }, [])
+
+  // Load rerank models from backend
+  useEffect(() => {
+    const loadRerankModels = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/llm/models/?enabled=true&model_type=${encodeURIComponent('Rerank')}`)
+        const data = await res.json()
+        const models = data.results || data
+        const names = (models as { model_name?: string; model_id?: string }[])
+          .map(m => m.model_name || m.model_id)
+          .filter((n): n is string => Boolean(n))
+        const options = names.length > 0 ? names : ['qte-rerank']
+        setRerankOptions(options)
+        if (!options.includes(rerankModel)) {
+          setRerankModel(options[0])
+        }
+      } catch (error) {
+        console.error('Failed to load rerank models:', error)
+      }
+    }
+    loadRerankModels()
   }, [])
 
   // Persist settings to localStorage
@@ -1270,7 +1293,9 @@ export default function KBChunkSettings() {
                 <Box sx={{ mt: 2 }}>
                   <FormControlLabel control={<Switch checked={rerankEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
                   <Select size="small" disabled={isFromDocuments} value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ ml: 2 }}>
-                    <MenuItem value="qte-rerank">qte-rerank</MenuItem>
+                    {rerankOptions.map(name => (
+                      <MenuItem key={name} value={name}>{name}</MenuItem>
+                    ))}
                   </Select>
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
@@ -1302,7 +1327,9 @@ export default function KBChunkSettings() {
                 <Box sx={{ mt: 2 }}>
                   <FormControlLabel control={<Switch checked={rerankEnabled} onChange={(_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
                   <Select size="small" disabled={!rerankEnabled} value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ ml: 2 }}>
-                    <MenuItem value="qte-rerank">qte-rerank</MenuItem>
+                    {rerankOptions.map(name => (
+                      <MenuItem key={name} value={name}>{name}</MenuItem>
+                    ))}
                   </Select>
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
@@ -1344,7 +1371,9 @@ export default function KBChunkSettings() {
                     </Paper>
                   </Stack>
                   <Select size="small" disabled={isFromDocuments} value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ mt: 2 }}>
-                    <MenuItem value="qte-rerank">qte-rerank</MenuItem>
+                    {rerankOptions.map(name => (
+                      <MenuItem key={name} value={name}>{name}</MenuItem>
+                    ))}
                   </Select>
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>

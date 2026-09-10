@@ -35,6 +35,7 @@ class ModelCredential(models.Model):
     class ModelType(models.TextChoices):
         LLM = "LLM", "LLM"
         TEXT_EMBEDDING = "Text Embedding", "Text Embedding"
+        RERANK = "Rerank", "Rerank"
         SPEECH2TEXT = "Speech2text", "Speech2text"
         MODERATION = "Moderation", "Moderation"
         TTS = "TTS", "TTS"
@@ -43,6 +44,7 @@ class ModelCredential(models.Model):
         CHAT = "Chat", "Chat"
         COMPLETION = "completion", "completion"
         EMBEDDING = "embedding", "embedding"
+        RERANK = "rerank", "rerank"
 
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE, related_name="models")
     model_id = models.CharField(max_length=120)
