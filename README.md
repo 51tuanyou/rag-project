@@ -8,10 +8,11 @@ RAG project with a Django backend and a React + Vite frontend.
 
 ```
 rag-project/
-├── docker-compose.yml   # App services only (no database container)
-├── .env.example         # Env template for Docker / local
-├── rag-backend/         # Django API
-└── rag-frontend/        # React + Vite UI
+├── docker-compose.yml            # App: backend + frontend
+├── docker-compose.postgres.yml   # Optional: Postgres + PGVector (named network)
+├── .env.example                  # Env template for Docker / local
+├── rag-backend/                  # Django API
+└── rag-frontend/                 # React + Vite UI
 ```
 
 ## Tech stack
@@ -23,8 +24,8 @@ rag-project/
 | Language | Python 3.12 |
 | Framework | Django 5.2 + DRF |
 | Package manager | PDM |
-| Database | Existing PostgreSQL (env-configured) |
-| Vectors | Existing PGVector (env-configured) |
+| Database | PostgreSQL (env-configured) |
+| Vectors | PGVector (env-configured) |
 
 ### Frontend (`rag-frontend`)
 
@@ -44,7 +45,7 @@ rag-project/
 
 ## Docker Compose deploy (recommended)
 
-Uses **existing** Postgres / PGVector. Compose does **not** start a database container.
+App and database are **separate** Compose files. They share a **named** Docker network `rag_pgvector_net` (not the default `…_default` network).
 
 ### 1. Configure environment
 
@@ -53,47 +54,87 @@ cd d:\projects\51tuanyou\rag-project
 copy .env.example .env
 ```
 
-Edit `.env` and point DB hosts at your existing instance:
+Key DB settings (container-to-container):
 
-| Variable | Typical value when DB is on the Docker host |
-|----------|---------------------------------------------|
-| `POSTGRES_HOST` | `host.docker.internal` |
-| `PGVECTOR_HOST` | `host.docker.internal` |
-| `POSTGRES_*` / `PGVECTOR_*` | Your real DB name / user / password |
-| `VITE_API_BASE` | `http://localhost:8000` (browser → backend) |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost,http://127.0.0.1` |
+| Variable | Value | Notes |
+|----------|--------|--------|
+| `POSTGRES_HOST` | `postgres-ctr` | Container name, **not** `localhost` |
+| `PGVECTOR_HOST` | `postgres-ctr` | Same Postgres / PGVector instance |
+| `POSTGRES_DB` / `PGVECTOR_DB` | e.g. `rag_vectors` | Must exist in the DB volume |
+| `VITE_API_BASE` | `http://localhost:8000` | Browser → backend (host port) |
 
-If Postgres runs on another machine, set `POSTGRES_HOST` / `PGVECTOR_HOST` to that IP/hostname instead.
+> Inside a container, `localhost` means the container itself. Use `postgres-ctr` on the shared network.
 
-Ensure Postgres accepts connections from Docker (listen address / `pg_hba.conf`).
+### 2. Start Postgres + PGVector first
 
-### 2. Build & start
+```powershell
+docker compose -f docker-compose.postgres.yml up -d
+```
+
+This creates/uses network **`rag_pgvector_net`** and container **`postgres-ctr`** (`pgvector/pgvector:pg15`), with data at `D:/docker-volumes/postgres/postgres_data`.
+
+If you already had an old `postgres-ctr` on another network, recreate it:
+
+```powershell
+docker stop postgres-ctr
+docker rm postgres-ctr
+docker compose -f docker-compose.postgres.yml up -d
+```
+
+(Your data volume path is unchanged.)
+
+### 3. Build & start the app
 
 ```powershell
 docker compose up -d --build
 ```
 
-### 3. Open the app
+`docker-compose.yml` attaches `rag-backend` to external network `rag_pgvector_net`, so it can resolve `postgres-ctr:5432`.
+
+### 4. Open the app
 
 - Frontend: http://localhost
 - Backend API: http://localhost:8000
 - Admin: http://localhost:8000/admin/
 
+### Networking overview
+
+```
+rag-frontend  ──(host port 80)──► browser
+rag-backend   ──(host port 8000)──► browser / API
+rag-backend   ──rag_pgvector_net──► postgres-ctr:5432
+```
+
+| From | To Postgres use |
+|------|-----------------|
+| DBeaver on the host | `localhost:5432` (published port) |
+| `rag-backend` container | `postgres-ctr:5432` (Docker DNS) |
+
 ### Useful Compose commands
 
 ```powershell
+# DB
+docker compose -f docker-compose.postgres.yml ps
+docker compose -f docker-compose.postgres.yml logs -f
+docker compose -f docker-compose.postgres.yml down
+
+# App
 docker compose ps
 docker compose logs -f backend
 docker compose logs -f frontend
 docker compose restart backend
 docker compose down
+
+# Connectivity check
+docker exec -it rag-backend python -c "import socket; s=socket.create_connection(('postgres-ctr',5432),5); print('OK'); s.close()"
 ```
 
 ### Notes
 
 - Backend entrypoint waits for Postgres, then runs `migrate`.
-- Ollama on the host should use `OLLAMA_API_BASE=http://host.docker.internal:11434`.
+- Ollama on the host: `OLLAMA_API_BASE=http://host.docker.internal:11434`.
 - Frontend build bakes in `VITE_API_BASE`; rebuild frontend after changing it.
+- `docker-compose.postgres.yml` sets initial `POSTGRES_DB=rag_db`. If the app uses `rag_vectors`, create that database once (or change `.env` to match).
 
 ---
 
@@ -102,7 +143,7 @@ docker compose down
 ### Prerequisites
 
 - [Conda](https://docs.conda.io/) (Miniconda / Anaconda)
-- Existing PostgreSQL + PGVector (optional for local SQLite if `USE_POSTGRES=False`)
+- PostgreSQL + PGVector (optional SQLite if `USE_POSTGRES=False`)
 
 ### 1. Backend
 
@@ -115,6 +156,7 @@ cd rag-backend
 pdm install
 
 # Configure rag-backend/.env (see env.example)
+# For local (non-Docker) use: POSTGRES_HOST=localhost
 pdm run python manage.py migrate
 pdm run python manage.py runserver
 ```
@@ -157,4 +199,5 @@ pnpm dev
 pnpm build
 pnpm preview
 pnpm lint
+pnpm typecheck
 ```

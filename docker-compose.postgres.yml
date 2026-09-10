@@ -1,0 +1,25 @@
+# Standalone Postgres + PGVector (run separately from the app stack)
+# Usage:
+#   docker compose -f docker-compose.postgres.yml up -d
+#   docker compose -f docker-compose.postgres.yml down
+
+services:
+  postgres-ctr:
+    image: pgvector/pgvector:pg15
+    container_name: postgres-ctr
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag123
+      POSTGRES_DB: rag_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - D:/docker-volumes/postgres/postgres_data:/var/lib/postgresql/data
+    networks:
+      - rag_pgvector_net
+
+networks:
+  rag_pgvector_net:
+    name: rag_pgvector_net
+    driver: bridge

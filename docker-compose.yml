@@ -16,8 +16,17 @@ services:
       - backend_temp:/app/temp
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - pgvector_net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/llm/providers/"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/llm/providers/', timeout=3)",
+        ]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -33,9 +42,17 @@ services:
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - default
     depends_on:
       backend:
         condition: service_healthy
 
 volumes:
   backend_temp:
+
+networks:
+  # Shared named network with docker-compose.postgres.yml (postgres-ctr)
+  pgvector_net:
+    external: true
+    name: rag_pgvector_net
