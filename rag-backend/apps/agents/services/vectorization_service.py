@@ -58,7 +58,10 @@ class VectorizationService:
             embedding_model = ModelCredential.objects.get(id=embedding_model_id)
             
             # Prepare chunks for embedding
-            chunk_texts = [chunk['content'] for chunk in chunks]
+            chunk_texts = [
+                (chunk.get("embedding_text") or chunk.get("content") or "")
+                for chunk in chunks
+            ]
             
             # Create embeddings using LLM service
             embeddings = await self.llm_service.create_embeddings(
@@ -265,7 +268,10 @@ class VectorizationService:
             embedding_model = ModelCredential.objects.get(id=embedding_model_id)
             
             # Prepare chunks for embedding
-            chunk_texts = [chunk['content'] for chunk in chunks]
+            chunk_texts = [
+                (chunk.get("embedding_text") or chunk.get("content") or "")
+                for chunk in chunks
+            ]
             
             # Create embeddings using LLM service (synchronous)
             embeddings = self.llm_service.create_embeddings_sync(

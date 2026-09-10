@@ -163,7 +163,14 @@ def create_knowledge_base(request):
                 return Response({'error': 'Embedding model not found'}, status=status.HTTP_400_BAD_REQUEST)
         
         # Determine chunk type based on settings
-        chunk_type = 'qa' if settings.get('qa_format', False) else 'general'
+        if settings.get("chunk_type") in ("general", "qa", "toc"):
+            chunk_type = settings.get("chunk_type")
+        elif settings.get("toc_format", False):
+            chunk_type = "toc"
+        elif settings.get("qa_format", False):
+            chunk_type = "qa"
+        else:
+            chunk_type = "general"
         print(f"Creating knowledge base with chunk_type: {chunk_type}")
         
         # Create chunk settings for this knowledge base
@@ -174,7 +181,7 @@ def create_knowledge_base(request):
             overlap=settings.get('overlap', 50),
             replace_spaces=settings.get('replace_spaces', True),
             delete_urls=settings.get('delete_urls', False),
-            qa_format=settings.get('qa_format', False),
+            qa_format=chunk_type == 'qa' or settings.get('qa_format', False),
             qa_language=settings.get('qa_language', 'English'),
             question_flag=settings.get('question_flag', 'Q: '),
             answer_flag=settings.get('answer_flag', 'A: '),
@@ -233,11 +240,14 @@ def create_knowledge_base(request):
                 
                 # Create chunk records
                 for i, chunk_data in enumerate(chunks):
+                    content = chunk_data.get('content', '')
+                    embedding_text = chunk_data.get('embedding_text') or chunk_data.get('title') or None
                     chunk = Chunk.objects.create(
                         document=document,
                         chunk_id=chunk_data.get('id', f'chunk_{i+1}'),
-                        content=chunk_data.get('content', ''),
-                        characters=chunk_data.get('characters', 0),
+                        content=content,
+                        embedding_text=embedding_text,
+                        characters=chunk_data.get('characters', len(content)),
                         chunk_number=i + 1
                     )
                     # Update chunk_id to use database primary key
@@ -360,6 +370,8 @@ def get_documents(request):
             if doc.knowledge_base.chunk_settings:
                 if doc.knowledge_base.chunk_settings.chunk_type == 'qa':
                     chunking_mode = 'Q&A'
+                elif doc.knowledge_base.chunk_settings.chunk_type == 'toc':
+                    chunking_mode = '按目录结构'
                 elif doc.knowledge_base.chunk_settings.delimiter != '\\n\\n':
                     chunking_mode = 'CUSTOM'
             
@@ -614,6 +626,8 @@ def get_knowledge_bases(request):
             if kb.chunk_settings:
                 if kb.chunk_settings.chunk_type == 'qa':
                     chunking_mode = 'Q&A'
+                elif kb.chunk_settings.chunk_type == 'toc':
+                    chunking_mode = '按目录结构'
                 elif kb.chunk_settings.delimiter != '\\n\\n':
                     chunking_mode = 'CUSTOM'
             
@@ -965,6 +979,7 @@ def get_chunks(request):
             chunk_list.append({
                 'id': chunk.chunk_id,
                 'content': chunk.content,
+                'embedding_text': chunk.embedding_text or '',
                 'characters': chunk.characters,
                 'word_count': chunk.word_count,
                 'chunk_number': chunk.chunk_number,
@@ -1089,11 +1104,13 @@ def save_document_chunks(request):
         
         # Create new chunk records
         for chunk_data in chunks:
+            content = chunk_data.get('content', '')
             chunk = Chunk.objects.create(
                 document=document,
                 chunk_id=chunk_data.get('chunk_id', f'chunk_{chunk_data.get("chunk_number", 1)}'),
-                content=chunk_data.get('content', ''),
-                characters=chunk_data.get('characters', 0),
+                content=content,
+                embedding_text=chunk_data.get('embedding_text') or chunk_data.get('title') or None,
+                characters=chunk_data.get('characters', len(content)),
                 chunk_number=chunk_data.get('chunk_number', 1)
             )
             # Update chunk_id to use database primary key

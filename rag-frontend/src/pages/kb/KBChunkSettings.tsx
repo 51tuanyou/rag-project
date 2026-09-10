@@ -77,6 +77,7 @@ export default function KBChunkSettings() {
   const [itemsPerPage] = useState(5)
   const [generalExpanded, setGeneralExpanded] = useState(true)
   const [qaExpanded, setQaExpanded] = useState(false)
+  const [tocExpanded, setTocExpanded] = useState(false)
 
   // Fetch documents for the knowledge base
   const fetchDocuments = async () => {
@@ -133,6 +134,7 @@ export default function KBChunkSettings() {
         if (data.chunk_type === 'general') {
           setGeneralExpanded(true)
           setQaExpanded(false)
+          setTocExpanded(false)
           setQaFormat(false)
           setDelimiter(data.delimiter || '\\n\\n')
           setMaxLen(data.max_length?.toString() || '1024')
@@ -142,12 +144,20 @@ export default function KBChunkSettings() {
         } else if (data.chunk_type === 'qa') {
           setGeneralExpanded(false)
           setQaExpanded(true)
+          setTocExpanded(false)
           setQaFormat(true)
           setQuestionFlag(data.question_flag || 'Q: ')
           setAnswerFlag(data.answer_flag || 'A: ')
           setQaLanguage(data.qa_language || 'English')
           setQaMaxLength(data.qa_max_length?.toString() || '1024')
           setReplaceSpaces(data.replace_spaces || false)
+          setDeleteUrls(data.delete_urls || false)
+        } else if (data.chunk_type === 'toc') {
+          setGeneralExpanded(false)
+          setQaExpanded(false)
+          setTocExpanded(true)
+          setQaFormat(false)
+          setReplaceSpaces(data.replace_spaces ?? true)
           setDeleteUrls(data.delete_urls || false)
         }
       }
@@ -296,6 +306,7 @@ export default function KBChunkSettings() {
         const chunksData = chunksToSave.map((chunk, index) => ({
           chunk_id: chunk.id,
           content: chunk.content,
+          embedding_text: chunk.embedding_text || chunk.title || undefined,
           characters: chunk.characters,
           chunk_number: index + 1
         }))
@@ -377,9 +388,9 @@ export default function KBChunkSettings() {
         knowledgeName = fileName?.split('.')[0] || 'knowledge'
       }
       
-      // Determine the correct delimiter based on mode
-      const effectiveDelimiter = qaFormat ? questionFlag : delimiter
-      const effectiveMaxLen = qaFormat ? qaMaxLength : maxLen
+      const chunkType = tocExpanded ? 'toc' : qaExpanded ? 'qa' : 'general'
+      const effectiveDelimiter = qaExpanded ? questionFlag : delimiter
+      const effectiveMaxLen = qaExpanded ? qaMaxLength : maxLen
       
       navigate('/manage/kb/processing', { state: {
         files,
@@ -391,9 +402,11 @@ export default function KBChunkSettings() {
         retrievalMode,
         embeddingModel: embedding?.label || 'default',
         embeddingModelId: embedding?.id || null,
-        overlap,
+        overlap: tocExpanded || qaExpanded ? 0 : overlap,
         deleteUrls,
-        qaFormat,
+        qaFormat: qaExpanded,
+        tocFormat: tocExpanded,
+        chunkType,
         qaLanguage,
         questionFlag,
         answerFlag,
@@ -480,15 +493,27 @@ export default function KBChunkSettings() {
     try {
       let settings
       
-      if (qaExpanded) {
+      if (tocExpanded) {
+        settings = {
+          chunk_type: 'toc',
+          toc_format: true,
+          qa_format: false,
+          max_length: maxLen,
+          overlap: 0,
+          replace_spaces: replaceSpaces,
+          delete_urls: deleteUrls,
+        }
+      } else if (qaExpanded) {
         // Using Q&A mode settings
         settings = {
+          chunk_type: 'qa',
           delimiter: questionFlag,
           max_length: qaMaxLength,
           overlap: 0, // Q&A mode doesn't use overlap
           replace_spaces: replaceSpaces,
           delete_urls: deleteUrls,
           qa_format: true,
+          toc_format: false,
           qa_language: qaLanguage,
           question_flag: questionFlag,
           answer_flag: answerFlag
@@ -496,12 +521,14 @@ export default function KBChunkSettings() {
       } else {
         // General mode settings
         settings = {
+          chunk_type: 'general',
           delimiter,
           max_length: maxLen,
           overlap,
           replace_spaces: replaceSpaces,
           delete_urls: deleteUrls,
           qa_format: false,
+          toc_format: false,
           qa_language: qaLanguage
         }
       }
@@ -693,37 +720,28 @@ export default function KBChunkSettings() {
     setQaMaxLength('1024')
   }
 
-  // Toggle functions with mutual exclusivity
-  const toggleGeneral = () => {
-    if (generalExpanded) {
-      // If General is expanded, close it and open Q&A
-      setGeneralExpanded(false)
-      setQaExpanded(true)
-      setQaFormat(true) // Set qaFormat to true when switching to Q&A
-    } else {
-      // If General is closed, open it and close Q&A
-      setGeneralExpanded(true)
-      setQaExpanded(false)
-      setQaFormat(false) // Set qaFormat to false when switching to General
-    }
-    // Reset pagination when switching between settings
+  // Toggle functions with mutual exclusivity (General / Q&A / TOC)
+  const selectChunkMode = (mode: 'general' | 'qa' | 'toc') => {
+    setGeneralExpanded(mode === 'general')
+    setQaExpanded(mode === 'qa')
+    setTocExpanded(mode === 'toc')
+    setQaFormat(mode === 'qa')
     setCurrentPage(1)
   }
 
+  const toggleGeneral = () => {
+    if (generalExpanded) selectChunkMode('qa')
+    else selectChunkMode('general')
+  }
+
   const toggleQa = () => {
-    if (qaExpanded) {
-      // If Q&A is expanded, close it and open General
-      setQaExpanded(false)
-      setGeneralExpanded(true)
-      setQaFormat(false) // Set qaFormat to false when switching to General
-    } else {
-      // If Q&A is closed, open it and close General
-      setQaExpanded(true)
-      setGeneralExpanded(false)
-      setQaFormat(true) // Set qaFormat to true when switching to Q&A
-    }
-    // Reset pagination when switching between settings
-    setCurrentPage(1)
+    if (qaExpanded) selectChunkMode('general')
+    else selectChunkMode('qa')
+  }
+
+  const toggleToc = () => {
+    if (tocExpanded) selectChunkMode('general')
+    else selectChunkMode('toc')
   }
 
   // Load chunks from localStorage on component mount
@@ -789,6 +807,7 @@ export default function KBChunkSettings() {
       setShowPreview(false)
       setGeneralExpanded(true)
       setQaExpanded(false)
+      setTocExpanded(false)
     }
   }, [files])
 
@@ -796,7 +815,7 @@ export default function KBChunkSettings() {
   const renderChunkWithOverlap = (chunk: any, index: number) => {
     const overlapValue = parseInt(overlap)
     // Q&A mode doesn't show overlap highlighting
-    if (qaFormat || overlapValue <= 0 || index === 0) {
+    if (qaFormat || tocExpanded || overlapValue <= 0 || index === 0) {
       return <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{chunk.content}</Typography>
     }
 
@@ -864,15 +883,15 @@ export default function KBChunkSettings() {
             {/* General Setting */}
             <Paper 
               variant="outlined" 
-              onClick={!generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? toggleGeneral : undefined}
+              onClick={!generalExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'general') ? toggleGeneral : undefined}
               sx={{ 
                 p: 2, 
                 mb: 2, 
                 borderColor: 'primary.main', 
                 bgcolor: generalExpanded ? 'primary.50' : 'grey.50',
-                cursor: !generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? 'pointer' : 'default',
+                cursor: !generalExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'general') ? 'pointer' : 'default',
                 transition: 'all 0.2s',
-                ...(isFromDocuments && dbChunkSettings?.chunk_type === 'qa' && { 
+                ...(isFromDocuments && dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general' && { 
                   bgcolor: 'grey.100', 
                   opacity: 0.7,
                   cursor: 'not-allowed'
@@ -880,12 +899,12 @@ export default function KBChunkSettings() {
               }}
             >
               <Box 
-                onClick={generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? toggleGeneral : undefined}
+                onClick={generalExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'general') ? toggleGeneral : undefined}
                 sx={{ 
-                  cursor: generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? 'pointer' : 'default',
+                  cursor: generalExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'general') ? 'pointer' : 'default',
                   p: generalExpanded ? 1 : 0,
                   m: generalExpanded ? -1 : 0,
-                  '&:hover': generalExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'qa') ? {
+                  '&:hover': generalExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'general') ? {
                     bgcolor: 'rgba(0, 0, 0, 0.04)',
                     borderRadius: 1
                   } : {}
@@ -900,9 +919,9 @@ export default function KBChunkSettings() {
                 <Typography variant="body2" color="text.secondary">
                   General text chunking mode, the chunks retrieved and recalled are the same.
                 </Typography>
-                {isFromDocuments && dbChunkSettings?.chunk_type === 'qa' && (
+                {isFromDocuments && dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general' && (
                   <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: 'block' }}>
-                    * This setting cannot be modified when chunk type is Q&A
+                    * This setting cannot be modified when chunk type is {dbChunkSettings.chunk_type}
                   </Typography>
                 )}
               </Box>
@@ -917,7 +936,7 @@ export default function KBChunkSettings() {
                       size="small" 
                       sx={{ width: 240 }} 
                       placeholder="Enter delimiter (e.g., \n\n for double newlines)"
-                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'}
+                      disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'}
                       InputProps={{
                         endAdornment: <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>characters</Typography>
                       }}
@@ -928,7 +947,7 @@ export default function KBChunkSettings() {
                       onChange={e => setMaxLen(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
-                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'}
+                      disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'}
                       InputProps={{ 
                         endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span>
                       }} 
@@ -939,7 +958,7 @@ export default function KBChunkSettings() {
                       onChange={e => setOverlap(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
-                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'}
+                      disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'}
                       InputProps={{ 
                         endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>number</span>
                       }} 
@@ -950,11 +969,11 @@ export default function KBChunkSettings() {
                     <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Text Pre-processing Rules</Typography>
                     <Stack spacing={1}>
                       <FormControlLabel 
-                        control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'} />} 
+                        control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'} />} 
                         label="Replace consecutive spaces, newlines and tabs" 
                       />
                       <FormControlLabel 
-                        control={<Switch checked={deleteUrls} onChange={(_, v) => setDeleteUrls(v)} disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'qa'} />} 
+                        control={<Switch checked={deleteUrls} onChange={(_, v) => setDeleteUrls(v)} disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'} />} 
                         label="Delete all URLs and email addresses" 
                       />
                     </Stack>
@@ -971,15 +990,15 @@ export default function KBChunkSettings() {
             {/* Using Q&A Setting */}
             <Paper 
               variant="outlined" 
-              onClick={!qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? toggleQa : undefined}
+              onClick={!qaExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'qa') ? toggleQa : undefined}
               sx={{ 
                 p: 2, 
                 mb: 2, 
                 borderColor: 'warning.main', 
                 bgcolor: qaExpanded ? 'warning.50' : 'grey.50',
-                cursor: !qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? 'pointer' : 'default',
+                cursor: !qaExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'qa') ? 'pointer' : 'default',
                 transition: 'all 0.2s',
-                ...(isFromDocuments && dbChunkSettings?.chunk_type === 'general' && { 
+                ...(isFromDocuments && dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa' && { 
                   bgcolor: 'grey.100', 
                   opacity: 0.7,
                   cursor: 'not-allowed'
@@ -987,12 +1006,12 @@ export default function KBChunkSettings() {
               }}
             >
               <Box 
-                onClick={qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? toggleQa : undefined}
+                onClick={qaExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'qa') ? toggleQa : undefined}
                 sx={{ 
-                  cursor: qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? 'pointer' : 'default',
+                  cursor: qaExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'qa') ? 'pointer' : 'default',
                   p: qaExpanded ? 1 : 0,
                   m: qaExpanded ? -1 : 0,
-                  '&:hover': qaExpanded && (!isFromDocuments || dbChunkSettings?.chunk_type !== 'general') ? {
+                  '&:hover': qaExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'qa') ? {
                     bgcolor: 'rgba(0, 0, 0, 0.04)',
                     borderRadius: 1
                   } : {}
@@ -1007,9 +1026,9 @@ export default function KBChunkSettings() {
                 <Typography variant="body2" color="text.secondary">
                   When using the Q&A mode, the Question is used for embedding and retrieval.
                 </Typography>
-                {isFromDocuments && dbChunkSettings?.chunk_type === 'general' && (
+                {isFromDocuments && dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa' && (
                   <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: 'block' }}>
-                    * This setting cannot be modified when chunk type is General
+                    * This setting cannot be modified when chunk type is {dbChunkSettings.chunk_type}
                   </Typography>
                 )}
               </Box>
@@ -1023,7 +1042,7 @@ export default function KBChunkSettings() {
                       onChange={e => setQuestionFlag(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
-                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'}
+                      disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'}
                       InputProps={{
                         endAdornment: <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>characters</Typography>
                       }}
@@ -1034,7 +1053,7 @@ export default function KBChunkSettings() {
                       onChange={e => setAnswerFlag(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
-                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'}
+                      disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'}
                       InputProps={{ 
                         endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span>
                       }} 
@@ -1045,7 +1064,7 @@ export default function KBChunkSettings() {
                       onChange={e => setQaMaxLength(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
-                      disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'}
+                      disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'}
                       InputProps={{ 
                         endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>number</span>
                       }} 
@@ -1056,12 +1075,12 @@ export default function KBChunkSettings() {
                     <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Text Pre-processing Rules</Typography>
                     <Stack spacing={1}>
                       <FormControlLabel 
-                        control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'} />} 
+                        control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'} />} 
                         label="Replace consecutive spaces, newlines and tabs" 
                       />
                       <Stack direction="row" spacing={1} alignItems="center">
                         <FormControlLabel 
-                          control={<Switch checked={qaFormat} onChange={(_, v) => setQaFormat(v)} disabled={isFromDocuments && dbChunkSettings?.chunk_type === 'general'} />} 
+                          control={<Switch checked={qaFormat} onChange={(_, v) => setQaFormat(v)} disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'} />} 
                           label="Chunk using Q&A format in" 
                         />
                         <Select 
@@ -1082,6 +1101,89 @@ export default function KBChunkSettings() {
                   <Stack direction="row" spacing={1}>
                     <Button variant="outlined" startIcon={<Typography>🔍</Typography>} onClick={handlePreviewChunk}>Preview Chunk</Button>
                     <Button onClick={handleQaReset}>Reset</Button>
+                  </Stack>
+                </Stack>
+              )}
+            </Paper>
+
+            {/* 按目录结构 */}
+            <Paper
+              variant="outlined"
+              onClick={!tocExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'toc') ? toggleToc : undefined}
+              sx={{
+                p: 2,
+                mb: 2,
+                borderColor: 'success.main',
+                bgcolor: tocExpanded ? 'success.50' : 'grey.50',
+                cursor: !tocExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'toc') ? 'pointer' : 'default',
+                transition: 'all 0.2s',
+                ...(isFromDocuments && dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'toc' && {
+                  bgcolor: 'grey.100',
+                  opacity: 0.7,
+                  cursor: 'not-allowed',
+                }),
+              }}
+            >
+              <Box
+                onClick={tocExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'toc') ? toggleToc : undefined}
+                sx={{
+                  cursor: tocExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'toc') ? 'pointer' : 'default',
+                  p: tocExpanded ? 1 : 0,
+                  m: tocExpanded ? -1 : 0,
+                  '&:hover': tocExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'toc') ? {
+                    bgcolor: 'rgba(0, 0, 0, 0.04)',
+                    borderRadius: 1,
+                  } : {},
+                }}
+              >
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                  <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: 'success.light', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography variant="caption" sx={{ color: 'success.contrastText' }}>📑</Typography>
+                  </Box>
+                  <Typography variant="subtitle2" fontWeight={600}>按目录结构</Typography>
+                </Stack>
+                <Typography variant="body2" color="text.secondary">
+                  按文档最小子目录（如 5.1、8.5）分块；子目录名称用于向量嵌入与检索（类似 Q&A 用问题检索）。
+                </Typography>
+                {isFromDocuments && dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'toc' && (
+                  <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: 'block' }}>
+                    * This setting cannot be modified when chunk type is {dbChunkSettings.chunk_type}
+                  </Typography>
+                )}
+              </Box>
+
+              {tocExpanded && (
+                <Stack spacing={2} sx={{ mt: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Text Pre-processing Rules</Typography>
+                    <Stack spacing={1}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={replaceSpaces}
+                            onChange={(_, v) => setReplaceSpaces(v)}
+                            disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'toc'}
+                          />
+                        }
+                        label="Replace consecutive spaces, newlines and tabs"
+                      />
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={deleteUrls}
+                            onChange={(_, v) => setDeleteUrls(v)}
+                            disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'toc'}
+                          />
+                        }
+                        label="Delete all URLs and email addresses"
+                      />
+                    </Stack>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    系统会识别形如「1 范围」「3.1 一般规定」「8.5 …」的编号目录，仅对最深层子目录各生成一个分块。
+                  </Typography>
+                  <Stack direction="row" spacing={1}>
+                    <Button variant="outlined" startIcon={<Typography>🔍</Typography>} onClick={handlePreviewChunk}>Preview Chunk</Button>
                   </Stack>
                 </Stack>
               )}

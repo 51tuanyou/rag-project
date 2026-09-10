@@ -90,9 +90,14 @@ def _select_chunk_indices_with_llm(message: str, similar_chunks: list, llm_servi
     """Ask LLM only for relevant chunk indexes — do not rewrite table text."""
     listing = []
     for i, chunk in enumerate(similar_chunks, 1):
-        preview = (chunk.get("content") or "")[:400].replace("\n", " ")
-        listing.append(f"{i}. [{chunk.get('source_document', '')}] {preview}")
+        content = chunk.get("content") or ""
+        preview = content[:400].replace("\n", " ")
+        listing.append(
+            f"{i}. [{chunk.get('source_document', '')}] "
+            f"({len(content)} chars) {preview}"
+        )
     prompt = f"""根据用户问题，从下列检索分块中选出真正包含答案的分块编号。
+优先选择字符数更多、包含完整正文/表格的分块，不要选只有目录标题的短分块。
 只输出编号，多个用逗号分隔，例如：2 或 1,3。不要输出其他文字。
 
 用户问题：{message}
@@ -104,16 +109,48 @@ def _select_chunk_indices_with_llm(message: str, similar_chunks: list, llm_servi
         raw = llm_service.generate_response(prompt, llm_model, min(max_tokens, 64))
         nums = [int(x) for x in re.findall(r"\d+", raw or "")]
         valid = [n for n in nums if 1 <= n <= len(similar_chunks)]
-        # unique preserve order
         seen = set()
         ordered = []
         for n in valid:
             if n not in seen:
                 seen.add(n)
                 ordered.append(n)
-        return ordered or [1]
+        if not ordered:
+            ordered = [1]
+        # Upgrade tiny stubs to the longest retrieved chunk when needed
+        upgraded = []
+        for n in ordered:
+            chunk = similar_chunks[n - 1]
+            content = chunk.get("content") or ""
+            if len(content) >= 120:
+                upgraded.append(n)
+                continue
+            # Prefer longest among retrieved
+            best_i = max(
+                range(len(similar_chunks)),
+                key=lambda i: len(similar_chunks[i].get("content") or ""),
+            )
+            if len(similar_chunks[best_i].get("content") or "") > len(content):
+                upgraded.append(best_i + 1)
+            else:
+                upgraded.append(n)
+        # unique preserve order
+        out = []
+        seen2 = set()
+        for n in upgraded:
+            if n not in seen2:
+                seen2.add(n)
+                out.append(n)
+        return out or [1]
     except Exception:
-        return [1]
+        # Fallback: longest chunk
+        if not similar_chunks:
+            return [1]
+        best_i = max(
+            range(len(similar_chunks)),
+            key=lambda i: len(similar_chunks[i].get("content") or ""),
+        )
+        return [best_i + 1]
 
 
 @api_view(['POST'])

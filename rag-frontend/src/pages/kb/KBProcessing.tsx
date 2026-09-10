@@ -164,6 +164,7 @@ export default function KBProcessing() {
             const chunksForVectorization = chunks.map((chunk: any) => ({
               chunk_id: chunk.id,  // 使用 'id' 字段而不是 'chunk_id'
               content: chunk.content,
+              embedding_text: chunk.embedding_text || undefined,
               characters: chunk.characters,
               chunk_number: chunk.chunk_number
             }))
@@ -232,7 +233,9 @@ export default function KBProcessing() {
           overlap: parseInt(state?.overlap ?? '50'),
           replace_spaces: state?.replaceSpaces ?? true,
           delete_urls: state?.deleteUrls ?? false,
+          chunk_type: state?.chunkType ?? (state?.tocFormat ? 'toc' : state?.qaFormat ? 'qa' : 'general'),
           qa_format: state?.qaFormat ?? false,
+          toc_format: state?.tocFormat ?? false,
           qa_language: state?.qaLanguage ?? 'English',
           question_flag: state?.questionFlag ?? 'Q: ',
           answer_flag: state?.answerFlag ?? 'A: ',

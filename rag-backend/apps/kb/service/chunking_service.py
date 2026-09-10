@@ -13,7 +13,10 @@ class ChunkingService:
         """Process document into chunks based on settings"""
         processed_text = self._preprocess_text(document)
 
-        if self.settings.get("qa_format", False):
+        chunk_type = (self.settings.get("chunk_type") or "").strip().lower()
+        if chunk_type == "toc" or self.settings.get("toc_format", False):
+            chunks = self._process_toc_document(processed_text)
+        elif chunk_type == "qa" or self.settings.get("qa_format", False):
             chunks = self._process_qa_document(processed_text)
         else:
             chunks = self._split_into_chunks(processed_text)
@@ -202,6 +205,8 @@ class ChunkingService:
                                     "id": f"qa_{len(qa_chunks) + 1}",
                                     "content": temp_chunk.strip(),
                                     "characters": len(temp_chunk.strip()),
+                                    "embedding_text": question,
+                                    "title": question,
                                 }
                             )
                         temp_chunk = word
@@ -214,6 +219,8 @@ class ChunkingService:
                             "id": f"qa_{len(qa_chunks) + 1}",
                             "content": temp_chunk.strip(),
                             "characters": len(temp_chunk.strip()),
+                            "embedding_text": question,
+                            "title": question,
                         }
                     )
             else:
@@ -222,6 +229,8 @@ class ChunkingService:
                         "id": f"qa_{len(qa_chunks) + 1}",
                         "content": qa_content,
                         "characters": len(qa_content),
+                        "embedding_text": question,
+                        "title": question,
                     }
                 )
 
@@ -234,8 +243,169 @@ class ChunkingService:
                 "id": "qa_1",
                 "content": text.strip(),
                 "characters": len(text.strip()),
+                "embedding_text": text.strip()[:200],
+                "title": "",
             }
         ]
+
+    # Numbered section headings: "1 范围", "3.1 一般规定", "8.5 水位流量…"
+    # Generic (not language-specific): leading numeric path + short title line.
+    _TOC_HEADING_RE = re.compile(
+        r"^(?P<num>\d+(?:\.\d+)*)\s+(?P<title>\S.{0,120}?)\s*$"
+    )
+    # Table-of-contents index lines: "5.1 测站基本属性表...... 5"
+    _TOC_INDEX_LINE_RE = re.compile(r"[\.．…·•]{2,}\s*\d+\s*$")
+
+    def _parse_toc_heading(self, line: str):
+        """Return (num_tuple, title, full_label) or None if line is not a heading."""
+        raw = (line or "").strip()
+        if not raw or len(raw) > 160:
+            return None
+        # Skip catalogue/index lines — they create empty stub chunks without tables
+        if self._TOC_INDEX_LINE_RE.search(raw):
+            return None
+        # Reject table-like / prose-heavy lines
+        if raw.count("|") >= 2:
+            return None
+        if re.search(r"[：:。；;]", raw):
+            return None
+        # Reject schema / table data rows e.g. "1 测站编码 STCD C(8) N 1"
+        tokens = re.split(r"\s+", raw)
+        if len(tokens) >= 5:
+            return None
+        if any(re.match(r"^[A-Za-z]{1,4}\(\d", t) for t in tokens):
+            return None
+        if any(t.upper() in {"DATETIME", "VARCHAR", "INTEGER", "BOOLEAN", "FLOAT", "DOUBLE"} for t in tokens):
+            return None
+        # ALL-CAPS field ids (STCD, MYDAVZ) with several tokens → table row, not a section title
+        if len(tokens) >= 4 and any(re.fullmatch(r"[A-Z][A-Z0-9_]{1,}", t or "") for t in tokens[1:]):
+            return None
+
+        m = self._TOC_HEADING_RE.match(raw)
+        if not m:
+            return None
+        num_s = m.group("num")
+        title = m.group("title").strip()
+        title = re.sub(r"[\.．…·•\s]+\d*$", "", title).strip()
+        if not title or len(title) > 100:
+            return None
+        # Too many tokens in title → not a section heading
+        if len(re.split(r"\s+", title)) > 8:
+            return None
+        try:
+            num_tuple = tuple(int(x) for x in num_s.split("."))
+        except ValueError:
+            return None
+        label = f"{num_s} {title}"
+        return num_tuple, title, label
+
+    def _is_toc_leaf(self, path: tuple, all_paths: List[tuple]) -> bool:
+        """Leaf = no other heading has this path as a proper prefix."""
+        return not any(
+            len(other) > len(path) and other[: len(path)] == path for other in all_paths
+        )
+
+    def _dedupe_toc_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Keep the longest chunk per section label (prefer body over short duplicates)."""
+        best: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
+        for chunk in chunks:
+            key = (chunk.get("embedding_text") or chunk.get("title") or chunk.get("id") or "").strip()
+            if not key:
+                key = chunk.get("id") or str(id(chunk))
+            if key not in best:
+                order.append(key)
+                best[key] = chunk
+            elif chunk.get("characters", 0) > best[key].get("characters", 0):
+                best[key] = chunk
+        # Drop near-empty stubs (heading line only)
+        result = []
+        for key in order:
+            chunk = best[key]
+            label = (chunk.get("embedding_text") or "").strip()
+            body = (chunk.get("content") or "").strip()
+            # Skip catalogue stubs: content is only the heading line
+            body_lines = [ln for ln in body.splitlines() if ln.strip()]
+            if label and len(body_lines) <= 1 and body_lines and label in body_lines[0]:
+                continue
+            result.append(chunk)
+        # Re-number ids
+        for i, chunk in enumerate(result, 1):
+            chunk["id"] = f"toc_{i}"
+        return result
+
+    def _process_toc_document(self, text: str) -> List[Dict[str, Any]]:
+        """
+        Chunk by smallest (leaf) numbered directory/section headings.
+        embedding_text / title = section name (used for vector search, like Q&A questions).
+        content = full section body including the heading line.
+        """
+        lines = text.replace("\r\n", "\n").split("\n")
+        headings = []  # {index, path, label, title}
+        for i, line in enumerate(lines):
+            parsed = self._parse_toc_heading(line)
+            if not parsed:
+                continue
+            path, title, label = parsed
+            headings.append({"index": i, "path": path, "title": title, "label": label})
+
+        if not headings:
+            body = text.strip()
+            return [
+                {
+                    "id": "toc_1",
+                    "content": body,
+                    "characters": len(body),
+                    "embedding_text": body[:200] if body else "",
+                    "title": "",
+                }
+            ] if body else []
+
+        all_paths = [h["path"] for h in headings]
+        leaf_indices = [
+            i for i, h in enumerate(headings) if self._is_toc_leaf(h["path"], all_paths)
+        ]
+
+        chunks: List[Dict[str, Any]] = []
+        # Optional preamble before first heading (skip pure TOC pages)
+        first_idx = headings[0]["index"]
+        if first_idx > 0:
+            preamble = "\n".join(lines[:first_idx]).strip()
+            # Ignore short front-matter / catalogue leftovers
+            if preamble and len(preamble) >= 80 and not re.search(r"目\s*次|contents", preamble[:40], re.I):
+                chunks.append(
+                    {
+                        "id": f"toc_{len(chunks) + 1}",
+                        "content": preamble,
+                        "characters": len(preamble),
+                        "embedding_text": preamble.split("\n", 1)[0][:200],
+                        "title": preamble.split("\n", 1)[0][:80],
+                    }
+                )
+
+        for h_i in leaf_indices:
+            h = headings[h_i]
+            start = h["index"]
+            end = len(lines)
+            for later in headings[h_i + 1 :]:
+                end = later["index"]
+                break
+            body = "\n".join(lines[start:end]).strip()
+            if not body:
+                continue
+            chunks.append(
+                {
+                    "id": f"toc_{len(chunks) + 1}",
+                    "content": body,
+                    "characters": len(body),
+                    "embedding_text": h["label"],
+                    "title": h["label"],
+                }
+            )
+
+        chunks = self._dedupe_toc_chunks(chunks)
+        print(f"Generated {len(chunks)} TOC leaf chunks from {len(headings)} headings ({len(leaf_indices)} leaves)")
+        return chunks
 
     def _split_into_chunks(self, text: str) -> List[Dict[str, Any]]:
         """Split text into chunks based on delimiter and length settings"""
