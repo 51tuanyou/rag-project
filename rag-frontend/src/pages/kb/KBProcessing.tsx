@@ -252,13 +252,23 @@ export default function KBProcessing() {
         },
         body: JSON.stringify(requestData)
       })
-      
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to create knowledge base')
+
+      const raw = await response.text()
+      let result: any = null
+      try {
+        result = raw ? JSON.parse(raw) : null
+      } catch {
+        throw new Error(
+          response.status === 504
+            ? 'Create knowledge base timed out (504). Check embedding/LLM connectivity and try again.'
+            : `Server returned non-JSON (HTTP ${response.status}). ${raw.slice(0, 120)}`
+        )
       }
-      
-      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to create knowledge base')
+      }
+
       setKnowledgeBaseId(result.knowledge_base_id)
       
       // Fetch chunk settings from the created knowledge base

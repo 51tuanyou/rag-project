@@ -25,12 +25,10 @@ class ChunkingService:
         processed = text
 
         if self.settings.get("replace_spaces", True):
-            if self.settings.get("qa_format", False):
-                # Keep newlines for Q&A structure; only collapse horizontal whitespace
-                processed = re.sub(r"[^\S\n]+", " ", processed)
-                processed = re.sub(r"\n{3,}", "\n\n", processed)
-            else:
-                processed = re.sub(r"\s+", " ", processed)
+            # Keep newlines so PDF tables / multi-line structures are not flattened
+            # into one long line (that caused mid-table chunk splits and missing rows).
+            processed = re.sub(r"[^\S\n]+", " ", processed)
+            processed = re.sub(r"\n{3,}", "\n\n", processed)
 
         if self.settings.get("delete_urls", False):
             processed = re.sub(
@@ -242,89 +240,85 @@ class ChunkingService:
     def _split_into_chunks(self, text: str) -> List[Dict[str, Any]]:
         """Split text into chunks based on delimiter and length settings"""
         delimiter = self.settings.get("delimiter", "\n\n")
+        # Unescape common UI-encoded newlines
+        if isinstance(delimiter, str):
+            delimiter = delimiter.replace("\\n", "\n")
         max_length = int(self.settings.get("max_length", 1024))
         overlap = int(self.settings.get("overlap", 50))
 
         print(
-            f"Chunking settings: delimiter='{delimiter}', "
+            f"Chunking settings: delimiter={delimiter!r}, "
             f"max_length={max_length}, overlap={overlap}"
         )
 
-        segments = text.split(delimiter)
+        segments = text.split(delimiter) if delimiter else [text]
         chunks = []
         chunk_id = 1
         current_chunk = ""
+
+        def flush_current():
+            nonlocal current_chunk, chunk_id
+            if current_chunk.strip():
+                chunks.append(
+                    {
+                        "id": f"Chunk-{chunk_id}",
+                        "content": current_chunk.strip(),
+                        "characters": len(current_chunk.strip()),
+                    }
+                )
+                chunk_id += 1
+            current_chunk = ""
+
+        def append_with_newline(base: str, addition: str) -> str:
+            if not base:
+                return addition
+            if not addition:
+                return base
+            return f"{base.rstrip()}\n\n{addition.lstrip()}"
 
         for segment in segments:
             segment = segment.strip()
             if not segment:
                 continue
 
-            if len(current_chunk) + len(segment) + 1 > max_length:
+            if len(current_chunk) + len(segment) + 2 > max_length:
                 if current_chunk:
-                    chunks.append(
-                        {
-                            "id": f"Chunk-{chunk_id}",
-                            "content": current_chunk.strip(),
-                            "characters": len(current_chunk.strip()),
-                        }
-                    )
-                    chunk_id += 1
+                    flush_current()
 
                 if len(segment) > max_length:
-                    words = segment.split()
+                    # Prefer line-based splits to keep table rows intact
+                    lines = segment.split("\n")
                     temp_chunk = ""
-
-                    for word in words:
-                        if len(temp_chunk) + len(word) + 1 > max_length:
-                            if temp_chunk:
-                                chunks.append(
-                                    {
-                                        "id": f"Chunk-{chunk_id}",
-                                        "content": temp_chunk.strip(),
-                                        "characters": len(temp_chunk.strip()),
-                                    }
-                                )
-                                chunk_id += 1
-
-                            if overlap > 0 and temp_chunk:
+                    for line in lines:
+                        candidate = f"{temp_chunk}\n{line}".strip() if temp_chunk else line
+                        if len(candidate) > max_length and temp_chunk:
+                            chunks.append(
+                                {
+                                    "id": f"Chunk-{chunk_id}",
+                                    "content": temp_chunk.strip(),
+                                    "characters": len(temp_chunk.strip()),
+                                }
+                            )
+                            chunk_id += 1
+                            if overlap > 0:
                                 overlap_text = (
                                     temp_chunk[-overlap:]
                                     if len(temp_chunk) > overlap
                                     else temp_chunk
                                 )
-                                temp_chunk = overlap_text + " " + word
+                                temp_chunk = f"{overlap_text}\n{line}".strip()
                             else:
-                                temp_chunk = word
+                                temp_chunk = line
                         else:
-                            temp_chunk = (
-                                f"{temp_chunk} {word}".strip() if temp_chunk else word
-                            )
-
+                            temp_chunk = candidate
                     current_chunk = temp_chunk
                 else:
-                    if overlap > 0 and current_chunk:
-                        overlap_text = (
-                            current_chunk[-overlap:]
-                            if len(current_chunk) > overlap
-                            else current_chunk
-                        )
-                        current_chunk = overlap_text + " " + segment
-                    else:
-                        current_chunk = segment
+                    current_chunk = segment
             else:
-                current_chunk = (
-                    f"{current_chunk} {segment}".strip() if current_chunk else segment
-                )
+                current_chunk = append_with_newline(current_chunk, segment)
 
         if current_chunk:
-            chunks.append(
-                {
-                    "id": f"Chunk-{chunk_id}",
-                    "content": current_chunk.strip(),
-                    "characters": len(current_chunk.strip()),
-                }
-            )
+            flush_current()
 
         print(f"Generated {len(chunks)} chunks")
         for chunk in chunks:

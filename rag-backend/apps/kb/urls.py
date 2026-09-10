@@ -15,6 +15,7 @@ urlpatterns = [
     path('check-knowledge-base-name/', views.check_knowledge_base_name, name='check-knowledge-base-name'),
     path('get-chunk-settings/<int:kb_id>/', views.get_chunk_settings, name='get-chunk-settings'),
     path('get-documents/', views.get_documents, name='get-documents'),
+    path('documents/<int:doc_id>/file/', views.download_document, name='download-document'),
     path('update-document-status/<int:doc_id>/', views.update_document_status, name='update-document-status'),
     path('update-document-name/<int:doc_id>/', views.update_document_name, name='update-document-name'),
     path('delete-document/<int:doc_id>/', views.delete_document, name='delete-document'),

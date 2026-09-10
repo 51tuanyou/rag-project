@@ -388,6 +388,41 @@ def get_documents(request):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def download_document(request, doc_id):
+    """Open/download an uploaded knowledge-base document file."""
+    from django.http import FileResponse
+    import mimetypes
+
+    try:
+        doc = Document.objects.get(id=doc_id)
+    except Document.DoesNotExist:
+        return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    path = doc.file_path
+    if not path or not os.path.exists(path):
+        # Fallback: try storage-relative temp/<name>
+        alt = os.path.join('temp', doc.file_name)
+        try:
+            path = default_storage.path(alt)
+        except Exception:
+            path = None
+        if not path or not os.path.exists(path):
+            return Response({'error': 'File not found on server'}, status=status.HTTP_404_NOT_FOUND)
+
+    content_type, _ = mimetypes.guess_type(doc.file_name)
+    response = FileResponse(
+        open(path, 'rb'),
+        as_attachment=False,
+        filename=doc.file_name,
+        content_type=content_type or 'application/octet-stream',
+    )
+    response['Content-Disposition'] = f'inline; filename="{doc.file_name}"'
+    return response
+
+
 @api_view(['PATCH'])
 def update_document_status(request, doc_id):
     """Update document status (enable/disable)"""

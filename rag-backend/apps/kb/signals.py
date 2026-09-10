@@ -10,21 +10,22 @@ from apps.agents.services.word_count_service import WordCountService
 @receiver(post_save, sender=Chunk)
 def calculate_chunk_word_count(sender, instance, created, **kwargs):
     """
-    Calculate and save word count when chunk is created or updated
+    Calculate and save word count when chunk is created or updated.
+
+    Never call an external LLM here: create-knowledge-base saves many chunks in one
+    request, and per-chunk LLM calls hang/timeout (504) when the model is slow or
+    unreachable (common on local Docker).
     """
     if instance.content:
         word_count_service = WordCountService()
-        
-        # Use smart word counting (LLM for longer texts, regex for shorter)
         word_count = word_count_service.count_words_smart(
             text=instance.content,
-            use_llm=len(instance.content) > 200  # Use LLM for texts longer than 200 chars
+            use_llm=False,
         )
-        
+
         # Update the word_count field if it's different
         if instance.word_count != word_count:
-            instance.word_count = word_count
-            # Use update_fields to avoid triggering the signal again
+            # Use update to avoid re-entering this signal via instance.save()
             Chunk.objects.filter(id=instance.id).update(word_count=word_count)
 
 

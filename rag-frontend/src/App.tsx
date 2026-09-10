@@ -11,6 +11,9 @@ import {
   Chip,
   Alert,
   AlertTitle,
+  Checkbox,
+  FormControlLabel,
+  Link,
 } from '@mui/material'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -27,9 +30,11 @@ import { useNavigate } from 'react-router-dom'
 import Settings from '@mui/icons-material/Settings'
 import LibraryBooks from '@mui/icons-material/LibraryBooks'
 import WarningIcon from '@mui/icons-material/Warning'
-import { API_BASE } from './apiBase'
+import { API_BASE, apiFetch } from './apiBase'
+import ChatMessageContent from './ChatMessageContent'
 
-type ChatMessage = { role: 'assistant' | 'user'; content: string; timestamp?: string }
+type SourceDocument = { id: number; file_name: string; url: string }
+type ChatMessage = { role: 'assistant' | 'user'; content: string; timestamp?: string; sources?: SourceDocument[] }
 type LLMModel = { id: string; provider: string; label: string; tags?: string[]; isManagement?: boolean }
 type SelectedKb = { id: number | 'all'; display_name: string; isSpecial?: boolean }
 
@@ -38,6 +43,8 @@ function App() {
   const [kb, setKb] = useState(() => localStorage.getItem('xenera.kb') || '请选择知识库')
   const [llm, setLlm] = useState(() => localStorage.getItem('xenera.llm') || '请选择LLM')
   const [chunk, setChunk] = useState(() => localStorage.getItem('xenera.chunk') || '检索分块数量')
+  const [returnOriginal, setReturnOriginal] = useState(() => localStorage.getItem('xenera.returnOriginal') === '1')
+  const [openOriginal, setOpenOriginal] = useState(() => localStorage.getItem('xenera.openOriginal') === '1')
   const [llmOptions, setLlmOptions] = useState<LLMModel[]>([])
   const [selectedLlm, setSelectedLlm] = useState<LLMModel | null>(null)
   const [highlightedLlm, setHighlightedLlm] = useState<LLMModel | null>(null)
@@ -50,6 +57,8 @@ function App() {
   const KB_KEY = 'xenera.kb'
   const LLM_KEY = 'xenera.llm'
   const CHUNK_KEY = 'xenera.chunk'
+  const RETURN_ORIGINAL_KEY = 'xenera.returnOriginal'
+  const OPEN_ORIGINAL_KEY = 'xenera.openOriginal'
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: '你好，我是 AI 助手，有什么可以帮你？', timestamp: new Date().toLocaleString() },
@@ -251,6 +260,13 @@ function App() {
     }
   }, [selectedLlm])
   useEffect(() => { localStorage.setItem(CHUNK_KEY, chunk) }, [chunk])
+  useEffect(() => { localStorage.setItem(RETURN_ORIGINAL_KEY, returnOriginal ? '1' : '0') }, [returnOriginal])
+  useEffect(() => { localStorage.setItem(OPEN_ORIGINAL_KEY, openOriginal ? '1' : '0') }, [openOriginal])
+
+  const resolveSourceUrl = (url: string) => {
+    if (/^https?:\/\//i.test(url)) return url
+    return `${API_BASE}${url.startsWith('/') ? url : `/${url}`}`
+  }
 
   const onSend = async () => {
     setIsHistoryView(false)
@@ -269,6 +285,8 @@ function App() {
         `用户选择了知识库：${selectedKb?.display_name || '未选择'}`,
         `用户选择了LLM：${selectedLlm?.label || '未选择'}`,
         `检索分块数量：${chunk}`,
+        `返回原文档：${returnOriginal ? '是' : '否'}`,
+        `打开原文档：${openOriginal ? '是' : '否'}`,
         `用户问题：${text}`,
       ])
 
@@ -293,6 +311,8 @@ function App() {
       `用户选择了知识库：${selectedKb?.display_name || '未选择'}`,
       `用户选择了LLM：${selectedLlm?.label || '未选择'}`,
       `检索分块数量：${chunk}`,
+      `返回原文档：${returnOriginal ? '是' : '否'}`,
+      `打开原文档：${openOriginal ? '是' : '否'}`,
       `用户问题：${text}`,
     ])
 
@@ -303,11 +323,13 @@ function App() {
         llm_model_name: selectedLlm?.label || '',
         knowledge_base_id: selectedKb?.id === 'all' ? 'all' : (selectedKb?.id ?? null),
         chunk_count: chunk !== '检索分块数量' ? parseInt(chunk) : 3,
-        max_tokens: 500
+        max_tokens: 2000,
+        return_original: returnOriginal,
+        open_original: openOriginal,
       }
 
       // Call chat API
-      const response = await fetch(`${API_BASE}/api/agents/chat/`, {
+      const response = await apiFetch(`${API_BASE}/api/agents/chat/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -321,11 +343,17 @@ function App() {
       }
 
       const data = await response.json()
+      const sources: SourceDocument[] = Array.isArray(data.source_documents) ? data.source_documents : []
       
       // Add response to messages
       setMessages(prev => [
         ...prev,
-        { role: 'assistant', content: data.response, timestamp: new Date().toLocaleString() }
+        {
+          role: 'assistant',
+          content: data.response,
+          timestamp: new Date().toLocaleString(),
+          sources: openOriginal ? sources : undefined,
+        }
       ])
 
       // Update logs with detailed execution steps
@@ -392,7 +420,7 @@ function App() {
         </Alert>
       )}
       
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2, width: '100%' }}>
         <Select 
           size="small" 
           value={selectedKb?.id === 'all' ? 'all-kb' : (selectedKb?.id ?? '')} 
@@ -515,6 +543,29 @@ function App() {
           <MenuItem value="7">7</MenuItem>
           <MenuItem value="8">8</MenuItem>
         </Select>
+        <Box sx={{ flex: 1, minWidth: 8 }} />
+        <FormControlLabel
+          sx={{ mr: 0, flexShrink: 0 }}
+          control={
+            <Checkbox
+              size="small"
+              checked={returnOriginal}
+              onChange={(_, checked) => setReturnOriginal(checked)}
+            />
+          }
+          label="返回原文档"
+        />
+        <FormControlLabel
+          sx={{ mr: 0, flexShrink: 0 }}
+          control={
+            <Checkbox
+              size="small"
+              checked={openOriginal}
+              onChange={(_, checked) => setOpenOriginal(checked)}
+            />
+          }
+          label="打开原文档"
+        />
       </Stack>
 
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
@@ -540,7 +591,30 @@ function App() {
                         {m.role === 'user' ? '用户' : '机器人'}
                         {m.timestamp ? ` · ${m.timestamp}` : ''}
                       </Typography>
-                      <Typography variant="body2">{m.content}</Typography>
+                      <ChatMessageContent
+                        content={
+                          m.sources?.length
+                            ? m.content.replace(/\n*原文档：[\s\S]*$/, '').trimEnd()
+                            : m.content
+                        }
+                      />
+                      {m.role === 'assistant' && m.sources && m.sources.length > 0 && (
+                        <Stack spacing={0.5} sx={{ mt: 1.25 }}>
+                          <Typography variant="caption" sx={{ fontWeight: 600 }}>原文档：</Typography>
+                          {m.sources.map((src) => (
+                            <Link
+                              key={src.id}
+                              href={resolveSourceUrl(src.url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              underline="hover"
+                              variant="body2"
+                            >
+                              {src.file_name}
+                            </Link>
+                          ))}
+                        </Stack>
+                      )}
                     </Paper>
                   </Box>
                 ))}
