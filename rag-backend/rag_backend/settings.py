@@ -181,11 +181,10 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL", "0").lower() in {"1", "true", "yes"}
 
 # REST Framework
+# Empty auth by default: SessionAuthentication + admin session cookie forces CSRF on
+# every SPA POST (upload-file, etc.) and the frontend historically omitted X-CSRFToken.
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
-    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
     ],

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
-import { API_BASE } from '../../apiBase'
+import { API_BASE, apiFetch } from '../../apiBase'
 import {
   Box,
   Button,
@@ -55,7 +55,7 @@ export default function KBUpload() {
         const formData = new FormData()
         formData.append('file', file)
         
-        const response = await fetch(`${API_BASE}/api/kb/upload-file/`, {
+        const response = await apiFetch(`${API_BASE}/api/kb/upload-file/`, {
           method: 'POST',
           body: formData
         })

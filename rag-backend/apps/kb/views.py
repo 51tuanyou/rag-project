@@ -2,7 +2,8 @@
 API views for document processing and chunking
 """
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from .service.chunking_service import ChunkingService
 from .service.document_parser import DocumentParser
@@ -17,6 +18,8 @@ from django.utils import timezone
 
 
 @api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def upload_file(request):
     """Upload and store a file"""
     try:
