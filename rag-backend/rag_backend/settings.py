@@ -30,7 +30,20 @@ SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-y$2abew*!d2vv1yj7y)n)=d*8g
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "True").lower() in {"true", "1", "yes"}
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS_RAW = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1")
+ALLOWED_HOSTS = [h.strip() for h in ALLOWED_HOSTS_RAW.split(",") if h.strip()]
+# Allow all hosts when configured as * (useful for IP-based server access)
+if ALLOWED_HOSTS == ["*"]:
+    ALLOWED_HOSTS = ["*"]
+
+CSRF_TRUSTED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "CSRF_TRUSTED_ORIGINS",
+        "http://localhost,http://127.0.0.1,http://localhost:8000",
+    ).split(",")
+    if o.strip()
+]
 
 
 # Application definition
@@ -156,7 +169,16 @@ STORAGES = {
 
 # CORS
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
+CORS_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://localhost:5174,http://localhost,http://127.0.0.1",
+    ).split(",")
+    if o.strip()
+]
+# Allow all browser origins when CORS_ALLOW_ALL=true (convenient for IP deploy)
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL", "0").lower() in {"1", "true", "yes"}
 
 # REST Framework
 REST_FRAMEWORK = {

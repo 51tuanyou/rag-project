@@ -10,8 +10,8 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-# Browser-reachable backend URL (host machine), not the Docker service name
-ARG VITE_API_BASE=http://localhost:8000
+# same-origin => browser uses /api on current host (nginx proxies to backend)
+ARG VITE_API_BASE=same-origin
 ENV VITE_API_BASE=$VITE_API_BASE
 
 # Skip `tsc -b` here: existing strict TS issues shouldn't block image builds.

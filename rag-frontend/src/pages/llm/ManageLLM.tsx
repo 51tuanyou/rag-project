@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { API_BASE } from '../../apiBase'
 import {
   Box,
   Button,
@@ -43,7 +44,6 @@ type Provider = {
   models?: { id: string | number; name: string; tags: string[]; enabled: boolean }[]
 }
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
 
 type AddModelForm = {
   providerId: string

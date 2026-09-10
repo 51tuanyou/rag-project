@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { API_BASE } from '../../apiBase'
 import {
   Box,
   Button,
@@ -83,7 +84,7 @@ export default function KBChunkSettings() {
     
     setLoadingDocuments(true)
     try {
-      const response = await fetch(`http://localhost:8000/api/kb/get-documents/?kb_id=${kbId}`)
+      const response = await fetch(`${API_BASE}/api/kb/get-documents/?kb_id=${kbId}`)
       if (response.ok) {
         const data = await response.json()
         setDocuments(data.documents || [])
@@ -104,7 +105,7 @@ export default function KBChunkSettings() {
   const fetchChunksFromDB = async (documentId: number) => {
     setLoadingChunks(true)
     try {
-      const response = await fetch(`http://localhost:8000/api/kb/get-chunks/?document_id=${documentId}`)
+      const response = await fetch(`${API_BASE}/api/kb/get-chunks/?document_id=${documentId}`)
       if (response.ok) {
         const data = await response.json()
         setDbChunks(data.chunks || [])
@@ -123,7 +124,7 @@ export default function KBChunkSettings() {
     
     setLoadingChunkSettings(true)
     try {
-      const response = await fetch(`http://localhost:8000/api/kb/get-chunk-settings/${kbId}/`)
+      const response = await fetch(`${API_BASE}/api/kb/get-chunk-settings/${kbId}/`)
       if (response.ok) {
         const data = await response.json()
         setDbChunkSettings(data)
@@ -179,7 +180,6 @@ export default function KBChunkSettings() {
   type EmbeddingModel = { id: string; provider: string; label: string; tags?: string[] }
   const [embeddingOptions, setEmbeddingOptions] = useState<EmbeddingModel[]>([])
   const [embedding, setEmbedding] = useState<EmbeddingModel | null>(null)
-  const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
   
   // Show error message for archived documents
   const showArchivedError = () => {
@@ -490,6 +490,7 @@ export default function KBChunkSettings() {
           delete_urls: deleteUrls,
           qa_format: true,
           qa_language: qaLanguage,
+          question_flag: questionFlag,
           answer_flag: answerFlag
         }
       } else {

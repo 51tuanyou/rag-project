@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { API_BASE } from '../../apiBase'
 import {
   Box,
   Button,
@@ -52,7 +53,6 @@ export default function RetrievalTest() {
   const [knowledgeBaseName, setKnowledgeBaseName] = useState('')
   const [error, setError] = useState<string | null>(null)
   
-  const API_BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE || 'http://localhost:8000'
 
   // Fetch knowledge base name and test records
   useEffect(() => {

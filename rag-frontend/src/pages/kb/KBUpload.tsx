@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
+import { API_BASE } from '../../apiBase'
 import {
   Box,
   Button,
@@ -27,7 +28,6 @@ export default function KBUpload() {
   const [files, setFiles] = useState<FileItem[]>([])
   const [uploading, setUploading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
 
   // Restore files from location.state when coming back from chunk page
   useEffect(() => {

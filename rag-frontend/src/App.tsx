@@ -25,11 +25,13 @@ import Autocomplete from '@mui/material/Autocomplete'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import { useNavigate } from 'react-router-dom'
 import Settings from '@mui/icons-material/Settings'
-import CircleIcon from '@mui/icons-material/Circle'
+import LibraryBooks from '@mui/icons-material/LibraryBooks'
 import WarningIcon from '@mui/icons-material/Warning'
+import { API_BASE } from './apiBase'
 
 type ChatMessage = { role: 'assistant' | 'user'; content: string; timestamp?: string }
 type LLMModel = { id: string; provider: string; label: string; tags?: string[]; isManagement?: boolean }
+type SelectedKb = { id: number | 'all'; display_name: string; isSpecial?: boolean }
 
 function App() {
   const navigate = useNavigate()
@@ -40,12 +42,11 @@ function App() {
   const [selectedLlm, setSelectedLlm] = useState<LLMModel | null>(null)
   const [highlightedLlm, setHighlightedLlm] = useState<LLMModel | null>(null)
   const [knowledgeBases, setKnowledgeBases] = useState<Array<{ id: number; name: string; display_name: string; has_tags: boolean; tag_count: number }>>([])
-  const [selectedKb, setSelectedKb] = useState<{ id: number; display_name: string } | null>(null)
+  const [selectedKb, setSelectedKb] = useState<SelectedKb | null>(null)
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null) // null: checking, true: connected, false: disconnected
   const [historyOpen, setHistoryOpen] = useState(false)
   const [histories, setHistories] = useState<Array<{id:number; question:string; response:string; logs:string; created_at:string}>>([])
   const [isHistoryView, setIsHistoryView] = useState(false)
-  const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
   const KB_KEY = 'xenera.kb'
   const LLM_KEY = 'xenera.llm'
   const CHUNK_KEY = 'xenera.chunk'
@@ -212,7 +213,9 @@ function App() {
           setKnowledgeBases(data.knowledge_bases || [])
           
           // Set default selection if there's a saved KB
-          if (kb !== '请选择知识库') {
+          if (kb === '整个知识库') {
+            setSelectedKb({ id: 'all', display_name: '整个知识库', isSpecial: true })
+          } else if (kb !== '请选择知识库') {
             const savedKb = (data.knowledge_bases || []).find((kbItem: any) => kbItem.display_name === kb)
             if (savedKb) {
               setSelectedKb({ id: savedKb.id, display_name: savedKb.display_name })
@@ -298,7 +301,7 @@ function App() {
       const requestData = {
         message: text,
         llm_model_name: selectedLlm?.label || '',
-        knowledge_base_id: selectedKb?.id || null,
+        knowledge_base_id: selectedKb?.id === 'all' ? 'all' : (selectedKb?.id ?? null),
         chunk_count: chunk !== '检索分块数量' ? parseInt(chunk) : 3,
         max_tokens: 500
       }
@@ -373,10 +376,11 @@ function App() {
           }
         >
           <AlertTitle>后端服务连接失败</AlertTitle>
-          无法连接到后端服务 (http://localhost:8000)。请确保后端服务器正在运行。
+          无法连接到后端服务 ({API_BASE || (typeof window !== 'undefined' ? window.location.origin : '')})
+          。请确保后端可访问，并检查 ALLOWED_HOSTS / VITE_API_BASE。
           <br />
           <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>
-            解决方案：在终端中运行 <code>cd rag-backend && python manage.py runserver</code>
+            Docker: set ALLOWED_HOSTS=* or your server IP, rebuild frontend with empty VITE_API_BASE (nginx /api proxy).
           </Typography>
         </Alert>
       )}
@@ -391,11 +395,21 @@ function App() {
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
         <Select 
           size="small" 
-          value={selectedKb?.id || ''} 
+          value={selectedKb?.id === 'all' ? 'all-kb' : (selectedKb?.id ?? '')} 
           displayEmpty
+          renderValue={(selected) => {
+            if (selected === '' || selected === undefined || selected === null) return '请选择知识库'
+            if (selected === 'all-kb') return '整个知识库'
+            const kbItem = knowledgeBases.find(k => k.id === selected)
+            return kbItem?.display_name || '请选择知识库'
+          }}
           onChange={(e: SelectChangeEvent) => {
             const v = e.target.value
             if (v === 'manage-kb') { navigate('/manage/kb'); return }
+            if (v === 'all-kb') {
+              setSelectedKb({ id: 'all', display_name: '整个知识库', isSpecial: true })
+              return
+            }
             if (v === '') {
               setSelectedKb(null)
               return
@@ -414,6 +428,12 @@ function App() {
               {kbItem.display_name}
             </MenuItem>
           ))}
+          <MenuItem value="all-kb">
+            <Stack direction="row" spacing={1} alignItems="center">
+              <LibraryBooks fontSize="small" sx={{ color: 'primary.main' }} />
+              <Typography color="primary.main">整个知识库</Typography>
+            </Stack>
+          </MenuItem>
           <MenuItem value="manage-kb">
             <Stack direction="row" spacing={1} alignItems="center">
               <Settings fontSize="small" sx={{ color: 'primary.main' }} />

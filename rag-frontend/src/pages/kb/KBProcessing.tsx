@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
+import { API_BASE } from '../../apiBase'
 import {
   Box,
   Button,
@@ -111,7 +112,6 @@ export default function KBProcessing() {
   const [failedDocuments, setFailedDocuments] = useState<Set<number>>(new Set())
   const [documentErrors, setDocumentErrors] = useState<Map<number, string>>(new Map())
   
-  const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000'
 
   // Fetch chunk settings from knowledge base
   const fetchChunkSettings = async (kbId: number) => {

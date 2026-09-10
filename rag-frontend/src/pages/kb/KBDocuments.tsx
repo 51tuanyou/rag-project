@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
+import { API_BASE } from '../../apiBase'
 import {
   Box,
   Button,
@@ -79,7 +80,6 @@ export default function KBDocuments() {
   const [snackbarMessage, setSnackbarMessage] = useState('')
   const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success')
   
-  const API_BASE = (import.meta as { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE || 'http://localhost:8000'
 
   // Show snackbar message
   const showSnackbar = (message: string, severity: 'success' | 'error' = 'success') => {

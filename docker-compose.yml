@@ -37,7 +37,7 @@ services:
       context: ./rag-frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8000}
+        VITE_API_BASE: ${VITE_API_BASE:-same-origin}
     container_name: rag-frontend
     restart: unless-stopped
     ports:

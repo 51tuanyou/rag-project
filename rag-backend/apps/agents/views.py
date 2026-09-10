@@ -125,24 +125,35 @@ def chat(request):
         response_text = ""
         
         # Check if knowledge base is selected
-        if knowledge_base_id:
-            logs.append(f"选择了知识库ID: {knowledge_base_id}")
-            logs.append(f"开始检索相关分块...")
+        search_all_kbs = knowledge_base_id in ("all", "ALL", -1, "-1")
+        if search_all_kbs or knowledge_base_id:
+            if search_all_kbs:
+                logs.append("选择了知识库: 整个知识库")
+                logs.append("开始在全部知识库中检索相关分块...")
+            else:
+                logs.append(f"选择了知识库ID: {knowledge_base_id}")
+                logs.append("开始检索相关分块...")
             
             try:
-                # Get knowledge base by ID
-                kb = KnowledgeBase.objects.filter(id=knowledge_base_id).first()
-                if not kb:
-                    return Response({'error': f'Knowledge base not found: {knowledge_base_id}'}, 
-                                  status=status.HTTP_404_NOT_FOUND)
-                
-                logs.append(f"   知识库名称: {kb.name}")
-                
-                # Perform retrieval
                 retrieval_service = RetrievalService()
-                similar_chunks, db_results = retrieval_service.perform_retrieval_test(
-                    message, kb.id, chunk_count
-                )
+                if search_all_kbs:
+                    similar_chunks, db_results = retrieval_service.perform_retrieval_all_knowledge_bases(
+                        message, chunk_count
+                    )
+                    logs.append("   检索范围: 全部知识库")
+                else:
+                    # Get knowledge base by ID
+                    kb = KnowledgeBase.objects.filter(id=knowledge_base_id).first()
+                    if not kb:
+                        return Response({'error': f'Knowledge base not found: {knowledge_base_id}'}, 
+                                      status=status.HTTP_404_NOT_FOUND)
+                    
+                    logs.append(f"   知识库名称: {kb.name}")
+                    
+                    # Perform retrieval
+                    similar_chunks, db_results = retrieval_service.perform_retrieval_test(
+                        message, kb.id, chunk_count
+                    )
                 
                 logs.append(f"检索到 {len(similar_chunks)} 个相关分块")
                 

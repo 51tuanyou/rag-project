@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react'
+import { API_BASE } from '../../apiBase'
 import {
   Box,
   Button,
@@ -130,7 +131,7 @@ export default function ManageKB() {
       try {
         setLoading(true)
         setError(null)
-        const response = await fetch('http://localhost:8000/api/kb/get-knowledge-bases/')
+        const response = await fetch(`${API_BASE}/api/kb/get-knowledge-bases/`)
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
         }
@@ -151,7 +152,7 @@ export default function ManageKB() {
   useEffect(() => {
     const fetchTags = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/kb/get-tags/')
+        const response = await fetch(`${API_BASE}/api/kb/get-tags/`)
         if (response.ok) {
           const data = await response.json()
           setTags(data.tags || [])
@@ -172,7 +173,7 @@ export default function ManageKB() {
       for (const kb of kbs) {
         try {
           // Add cache busting parameter to ensure fresh data
-          const response = await fetch(`http://localhost:8000/api/kb/get-kb-tags/${kb.id}/?t=${Date.now()}`)
+          const response = await fetch(`${API_BASE}/api/kb/get-kb-tags/${kb.id}/?t=${Date.now()}`)
           if (response.ok) {
             const data = await response.json()
             console.log(`Fresh data for KB ${kb.id}:`, data.tags)
@@ -262,7 +263,7 @@ export default function ManageKB() {
     try {
       console.log('Deleting knowledge base:', selectedKb.id)
       
-      const response = await fetch(`http://localhost:8000/api/kb/delete-knowledge-base/${selectedKb.id}/`, {
+      const response = await fetch(`${API_BASE}/api/kb/delete-knowledge-base/${selectedKb.id}/`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -319,7 +320,7 @@ export default function ManageKB() {
     if (Object.keys(es).length > 0) return
 
     try {
-      const response = await fetch(`http://localhost:8000/api/kb/update-knowledge-base/${editForm.id}/`, {
+      const response = await fetch(`${API_BASE}/api/kb/update-knowledge-base/${editForm.id}/`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -359,7 +360,7 @@ export default function ManageKB() {
 
   const handleAddTagToKb = async (kbId: number, tagId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/kb/add-tag-to-kb/${kbId}/`, {
+      const response = await fetch(`${API_BASE}/api/kb/add-tag-to-kb/${kbId}/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -371,7 +372,7 @@ export default function ManageKB() {
         console.log('Successfully activated tag, refreshing data...')
         
         // Refresh global tags list to get updated status
-        const tagsResponse = await fetch(`http://localhost:8000/api/kb/get-tags/?t=${Date.now()}`)
+        const tagsResponse = await fetch(`${API_BASE}/api/kb/get-tags/?t=${Date.now()}`)
         if (tagsResponse.ok) {
           const tagsData = await tagsResponse.json()
           console.log('Updated tags:', tagsData.tags)
@@ -381,7 +382,7 @@ export default function ManageKB() {
         }
         
         // Refresh KB tags
-        const kbTagsResponse = await fetch(`http://localhost:8000/api/kb/get-kb-tags/${kbId}/?t=${Date.now()}`)
+        const kbTagsResponse = await fetch(`${API_BASE}/api/kb/get-kb-tags/${kbId}/?t=${Date.now()}`)
         if (kbTagsResponse.ok) {
           const data = await kbTagsResponse.json()
           console.log('Updated KB tags:', data.tags)
@@ -402,7 +403,7 @@ export default function ManageKB() {
 
   const handleRemoveTagFromKb = async (kbId: number, tagId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/kb/remove-tag-from-kb/${kbId}/${tagId}/`, {
+      const response = await fetch(`${API_BASE}/api/kb/remove-tag-from-kb/${kbId}/${tagId}/`, {
         method: 'DELETE',
       })
 
@@ -410,7 +411,7 @@ export default function ManageKB() {
         console.log('Successfully deactivated tag, refreshing data...')
         
         // Refresh global tags list to get updated status
-        const tagsResponse = await fetch(`http://localhost:8000/api/kb/get-tags/?t=${Date.now()}`)
+        const tagsResponse = await fetch(`${API_BASE}/api/kb/get-tags/?t=${Date.now()}`)
         if (tagsResponse.ok) {
           const tagsData = await tagsResponse.json()
           console.log('Updated tags:', tagsData.tags)
@@ -420,7 +421,7 @@ export default function ManageKB() {
         }
         
         // Refresh KB tags
-        const kbTagsResponse = await fetch(`http://localhost:8000/api/kb/get-kb-tags/${kbId}/?t=${Date.now()}`)
+        const kbTagsResponse = await fetch(`${API_BASE}/api/kb/get-kb-tags/${kbId}/?t=${Date.now()}`)
         if (kbTagsResponse.ok) {
           const data = await kbTagsResponse.json()
           console.log('Updated KB tags:', data.tags)
@@ -444,7 +445,7 @@ export default function ManageKB() {
     if (!newTagName.trim()) return
 
     try {
-      const response = await fetch('http://localhost:8000/api/kb/create-tag/', {
+      const response = await fetch(`${API_BASE}/api/kb/create-tag/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -460,7 +461,7 @@ export default function ManageKB() {
         const newTag = await response.json()
         
         // Refresh tags list
-        const tagsResponse = await fetch('http://localhost:8000/api/kb/get-tags/')
+        const tagsResponse = await fetch(`${API_BASE}/api/kb/get-tags/`)
         if (tagsResponse.ok) {
           const data = await tagsResponse.json()
           setTags(data.tags || [])
@@ -468,7 +469,7 @@ export default function ManageKB() {
         
         // Refresh the specific knowledge base tags since the new tag is already associated
         if (currentKbId) {
-          const kbTagsResponse = await fetch(`http://localhost:8000/api/kb/get-kb-tags/${currentKbId}/?t=${Date.now()}`)
+          const kbTagsResponse = await fetch(`${API_BASE}/api/kb/get-kb-tags/${currentKbId}/?t=${Date.now()}`)
           if (kbTagsResponse.ok) {
             const kbTagsData = await kbTagsResponse.json()
             console.log('Refreshed KB tags:', kbTagsData)
@@ -502,7 +503,7 @@ export default function ManageKB() {
     if (!editingTag || !editTagName.trim()) return
 
     try {
-      const response = await fetch(`http://localhost:8000/api/kb/update-tag/${editingTag.id}/`, {
+      const response = await fetch(`${API_BASE}/api/kb/update-tag/${editingTag.id}/`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -515,7 +516,7 @@ export default function ManageKB() {
 
       if (response.ok) {
         // Refresh tags list
-        const tagsResponse = await fetch('http://localhost:8000/api/kb/get-tags/')
+        const tagsResponse = await fetch(`${API_BASE}/api/kb/get-tags/`)
         if (tagsResponse.ok) {
           const data = await tagsResponse.json()
           setTags(data.tags || [])
@@ -528,7 +529,7 @@ export default function ManageKB() {
         const newKbTags: Record<number, KbTag[]> = {}
         for (const kb of kbs) {
           try {
-            const kbTagsResponse = await fetch(`http://localhost:8000/api/kb/get-kb-tags/${kb.id}/`)
+            const kbTagsResponse = await fetch(`${API_BASE}/api/kb/get-kb-tags/${kb.id}/`)
             if (kbTagsResponse.ok) {
               const kbTagsData = await kbTagsResponse.json()
               newKbTags[kb.id] = kbTagsData.tags || []
@@ -559,13 +560,13 @@ export default function ManageKB() {
 
   const handleDeleteTag = async (tagId: number) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/kb/delete-tag/${tagId}/`, {
+      const response = await fetch(`${API_BASE}/api/kb/delete-tag/${tagId}/`, {
         method: 'DELETE',
       })
 
       if (response.ok) {
         // Refresh tags list
-        const tagsResponse = await fetch('http://localhost:8000/api/kb/get-tags/')
+        const tagsResponse = await fetch(`${API_BASE}/api/kb/get-tags/`)
         if (tagsResponse.ok) {
           const data = await tagsResponse.json()
           setTags(data.tags || [])
@@ -578,7 +579,7 @@ export default function ManageKB() {
         const newKbTags: Record<number, KbTag[]> = {}
         for (const kb of kbs) {
           try {
-            const kbTagsResponse = await fetch(`http://localhost:8000/api/kb/get-kb-tags/${kb.id}/`)
+            const kbTagsResponse = await fetch(`${API_BASE}/api/kb/get-kb-tags/${kb.id}/`)
             if (kbTagsResponse.ok) {
               const kbTagsData = await kbTagsResponse.json()
               newKbTags[kb.id] = kbTagsData.tags || []
