@@ -8,9 +8,10 @@ RAG project with a Django backend and a React + Vite frontend.
 
 ```
 rag-project/
-├── docker-compose.yml            # App: backend + frontend
+├── docker-compose.yml            # App: backend + frontend + DingTalk glue
 ├── docker-compose.postgres.yml   # Optional: Postgres + PGVector (named network)
 ├── .env.example                  # Env template for Docker / local
+├── dingtalk-bridge/              # DingTalk robot HTTP callback (glue)
 ├── rag-backend/                  # Django API
 └── rag-frontend/                 # React + Vite UI
 ```
@@ -96,6 +97,7 @@ docker compose up -d --build
 - Frontend: http://localhost (or `http://<server-ip>` on a remote host)
 - Backend API: http://localhost:8000
 - Admin: http://localhost/admin/ (nginx) or http://localhost:8000/admin/
+- DingTalk glue: http://localhost/dingtalk/callback (or host port `8010`)
 
 ### 5. Create Django admin superuser (Docker)
 
@@ -116,9 +118,11 @@ docker exec -it rag-backend python manage.py createsuperuser --username admin --
 ### Networking overview
 
 ```
-rag-frontend  ──(host port 80)──► browser
-rag-backend   ──(host port 8000)──► browser / API
-rag-backend   ──rag_pgvector_net──► postgres-ctr:5432
+rag-frontend       ──(host port 80)──► browser + DingTalk /dingtalk/callback
+dingtalk-bridge    ──(host port 8010)──► optional direct callback
+rag-backend        ──(host port 8000)──► browser / API
+rag-backend        ──rag_pgvector_net──► postgres-ctr:5432
+dingtalk-bridge    ──default network──► rag-backend:8000  (/api/agents/dingtalk-chat/)
 ```
 
 | From | To Postgres use |
@@ -138,6 +142,7 @@ docker compose -f docker-compose.postgres.yml down
 docker compose ps
 docker compose logs -f backend
 docker compose logs -f frontend
+docker compose logs -f dingtalk-bridge
 docker compose restart backend
 docker compose down
 
@@ -156,6 +161,77 @@ docker exec -it rag-backend python -c "import socket; s=socket.create_connection
 - Ollama on the host: `OLLAMA_API_BASE=http://host.docker.internal:11434`.
 - Frontend build bakes in `VITE_API_BASE`; rebuild frontend after changing it.
 - `docker-compose.postgres.yml` sets initial `POSTGRES_DB=rag_db`. If the app uses `rag_vectors`, create that database once (or change `.env` to match).
+
+---
+
+## DingTalk robot (HTTP callback)
+
+Independent glue service. The knowledge-base pipeline is unchanged; web chat and DingTalk share `run_chat()` in `rag-backend/apps/agents/services/chat_service.py`.
+
+```
+DingTalk user
+  → 钉钉开放平台 POST
+  → dingtalk-bridge /dingtalk/callback  (sign check, parse text)
+  → rag-backend POST /api/agents/dingtalk-chat/  (not the web /api/agents/chat/)
+  → sessionWebhook reply in the same DingTalk conversation
+```
+
+Do **not** point DingTalk at `http://llm.paoditu.com:8000/` (that is Django). Use nginx on port 80 or the glue port.
+
+| Env | 消息接收 URL |
+|-----|----------------|
+| Production (nginx) | `http://llm.paoditu.com/dingtalk/callback` |
+| Direct glue port | `http://llm.paoditu.com:8010/dingtalk/callback` |
+| Local Docker | `http://localhost/dingtalk/callback` |
+
+No ngrok. Local glue without Docker: `http://127.0.0.1:8010/dingtalk/callback` (DingTalk itself still needs the public URL above).
+
+钉钉 may require **HTTPS** for some app types. If HTTP is rejected, terminate TLS in front of nginx.
+
+### Configure
+
+1. Copy `.env.example` → `.env` if needed, then set:
+
+```
+DINGTALK_APP_SECRET=<AppSecret from 钉钉开放平台>
+DINGTALK_DEFAULT_LLM=<optional model_name, else first enabled LLM>
+PUBLIC_BASE_URL=http://llm.paoditu.com
+DINGTALK_BRIDGE_TOKEN=<optional shared secret>
+```
+
+2. 钉钉开放平台 → 企业内部应用 → 添加**机器人** → 消息接收选 **HTTP** → 回调地址填上表 URL。
+
+3. Rebuild:
+
+```powershell
+docker compose up -d --build backend frontend dingtalk-bridge
+```
+
+### DingTalk API defaults (`/api/agents/dingtalk-chat/`)
+
+Same retrieval + rerank + original-document logic as the web UI, with fixed options:
+
+- Knowledge base: entire library (`all`)
+- LLM: `DINGTALK_DEFAULT_LLM` or first enabled LLM
+- Chunk count: **3**
+- 返回原文档: **on**
+- 打开原文档: **on** (absolute links via `PUBLIC_BASE_URL`)
+- Rerank: **on** when a Rerank credential exists
+
+Session id from DingTalk (`conversationId`) is passed through and recorded in logs.
+
+### Local glue (conda / no Docker)
+
+```powershell
+cd dingtalk-bridge
+pip install -r requirements.txt
+$env:RAG_API_BASE="http://127.0.0.1:8000"
+$env:PUBLIC_BASE_URL="http://llm.paoditu.com"
+$env:DINGTALK_APP_SECRET="your_app_secret"
+uvicorn app:app --host 0.0.0.0 --port 8010
+```
+
+More detail: `dingtalk-bridge/README.md`.
 
 ---
 
