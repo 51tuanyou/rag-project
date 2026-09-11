@@ -3,7 +3,7 @@ Vectorization service for embedding chunks and storing in PGVector
 """
 import os
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from django.conf import settings
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -99,6 +99,69 @@ class VectorizationService:
         print(f"Detected embedding dimension: {dimension}")
         return dimension
 
+    def _get_existing_vector_dimension(self, cursor) -> Optional[int]:
+        """Read pgvector column dimension; information_schema alone is not enough."""
+        import re
+
+        cursor.execute(
+            """
+            SELECT format_type(a.atttypid, a.atttypmod) AS typ
+            FROM pg_attribute a
+            JOIN pg_class c ON a.attrelid = c.oid
+            JOIN pg_namespace n ON c.relnamespace = n.oid
+            WHERE c.relname = 'chunk_embeddings'
+              AND a.attname = 'embedding'
+              AND NOT a.attisdropped
+              AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        typ = row.get("typ") if isinstance(row, dict) else row[0]
+        if not typ:
+            return None
+        match = re.search(r"vector\((\d+)\)", str(typ))
+        return int(match.group(1)) if match else None
+
+    def _ensure_chunk_embeddings_table(self, cursor, conn, embedding_dimension: int) -> None:
+        """Create chunk_embeddings if needed. Never DROP existing data on dimension mismatch."""
+        current_dimension = self._get_existing_vector_dimension(cursor)
+        if current_dimension is not None and current_dimension != embedding_dimension:
+            raise ValueError(
+                f"PGVector table chunk_embeddings uses dimension {current_dimension}, "
+                f"but this embedding model produces {embedding_dimension}. "
+                "Use the same embedding dimension for all knowledge bases, "
+                "or manually migrate/recreate the vector table."
+            )
+
+        create_table_sql = f"""
+        CREATE EXTENSION IF NOT EXISTS vector;
+        CREATE TABLE IF NOT EXISTS chunk_embeddings (
+            id SERIAL PRIMARY KEY,
+            chunk_id VARCHAR(100) NOT NULL,
+            knowledge_base_id INTEGER NOT NULL,
+            document_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            characters INTEGER NOT NULL,
+            chunk_number INTEGER NOT NULL,
+            embedding vector({embedding_dimension}),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_kb_id ON chunk_embeddings(knowledge_base_id);
+        CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_doc_id ON chunk_embeddings(document_id);
+        CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON chunk_embeddings(chunk_id);
+        """
+        cursor.execute(create_table_sql)
+        conn.commit()
+        if current_dimension is None:
+            # Confirm after create
+            verified = self._get_existing_vector_dimension(cursor)
+            print(f"chunk_embeddings ready with dimension {verified or embedding_dimension}")
+        else:
+            print(f"Reusing existing chunk_embeddings (dimension {current_dimension})")
+
     async def store_vectors_in_pgvector(self, chunks_with_embeddings: List[Dict[str, Any]], 
                                       knowledge_base_id: int, document_id: int):
         """Store vectors in PGVector database"""
@@ -109,68 +172,7 @@ class VectorizationService:
             
             # Get embedding dimension dynamically
             embedding_dimension = self._get_embedding_dimension(chunks_with_embeddings)
-            
-            # Check if table exists and has correct dimension
-            check_table_sql = """
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'chunk_embeddings' AND column_name = 'embedding'
-            """
-            
-            cursor.execute(check_table_sql)
-            result = cursor.fetchone()
-            
-            if result and len(result) > 1:
-                # Table exists, check if dimension matches
-                current_dimension = None
-                data_type = result.get('data_type', '') if isinstance(result, dict) else (result[1] if len(result) > 1 else '')
-                
-                # Check if it's a vector type and get dimension
-                if data_type == 'USER-DEFINED':
-                    # For USER-DEFINED types, we need to check the actual vector dimension
-                    try:
-                        cursor.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'chunk_embeddings' AND column_name = 'embedding'")
-                        col_info = cursor.fetchone()
-                        if col_info and 'vector(' in col_info[1]:
-                            import re
-                            match = re.search(r'vector\((\d+)\)', col_info[1])
-                            if match:
-                                current_dimension = int(match.group(1))
-                    except:
-                        pass
-                elif 'vector(' in data_type:
-                    import re
-                    match = re.search(r'vector\((\d+)\)', data_type)
-                    if match:
-                        current_dimension = int(match.group(1))
-                
-                if current_dimension != embedding_dimension:
-                    print(f"Table exists with dimension {current_dimension}, but need {embedding_dimension}. Recreating table...")
-                    # Drop and recreate table with correct dimension
-                    cursor.execute("DROP TABLE IF EXISTS chunk_embeddings CASCADE;")
-                    conn.commit()
-            
-            # Create table if not exists with dynamic dimension
-            create_table_sql = f"""
-            CREATE EXTENSION IF NOT EXISTS vector;
-            CREATE TABLE IF NOT EXISTS chunk_embeddings (
-                id SERIAL PRIMARY KEY,
-                chunk_id VARCHAR(100) NOT NULL,
-                knowledge_base_id INTEGER NOT NULL,
-                document_id INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                characters INTEGER NOT NULL,
-                chunk_number INTEGER NOT NULL,
-                embedding vector({embedding_dimension}),  -- Dynamic dimension based on embedding model
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_kb_id ON chunk_embeddings(knowledge_base_id);
-            CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_doc_id ON chunk_embeddings(document_id);
-            CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON chunk_embeddings(chunk_id);
-            """
-            
-            cursor.execute(create_table_sql)
-            conn.commit()
+            self._ensure_chunk_embeddings_table(cursor, conn, embedding_dimension)
             
             # Delete existing embeddings for this document
             delete_sql = """
@@ -236,7 +238,7 @@ class VectorizationService:
             raise e
         finally:
             self.close_connection()
-    
+
     def vectorize_and_store_chunks_sync(self, chunks: List[Dict[str, Any]], 
                                        embedding_model_id: int, 
                                        knowledge_base_id: int, 
@@ -306,68 +308,7 @@ class VectorizationService:
             
             # Get embedding dimension dynamically
             embedding_dimension = self._get_embedding_dimension(chunks_with_embeddings)
-            
-            # Check if table exists and has correct dimension
-            check_table_sql = """
-            SELECT column_name, data_type 
-            FROM information_schema.columns 
-            WHERE table_name = 'chunk_embeddings' AND column_name = 'embedding'
-            """
-            
-            cursor.execute(check_table_sql)
-            result = cursor.fetchone()
-            
-            if result and len(result) > 1:
-                # Table exists, check if dimension matches
-                current_dimension = None
-                data_type = result.get('data_type', '') if isinstance(result, dict) else (result[1] if len(result) > 1 else '')
-                
-                # Check if it's a vector type and get dimension
-                if data_type == 'USER-DEFINED':
-                    # For USER-DEFINED types, we need to check the actual vector dimension
-                    try:
-                        cursor.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'chunk_embeddings' AND column_name = 'embedding'")
-                        col_info = cursor.fetchone()
-                        if col_info and 'vector(' in col_info[1]:
-                            import re
-                            match = re.search(r'vector\((\d+)\)', col_info[1])
-                            if match:
-                                current_dimension = int(match.group(1))
-                    except:
-                        pass
-                elif 'vector(' in data_type:
-                    import re
-                    match = re.search(r'vector\((\d+)\)', data_type)
-                    if match:
-                        current_dimension = int(match.group(1))
-                
-                if current_dimension != embedding_dimension:
-                    print(f"Table exists with dimension {current_dimension}, but need {embedding_dimension}. Recreating table...")
-                    # Drop and recreate table with correct dimension
-                    cursor.execute("DROP TABLE IF EXISTS chunk_embeddings CASCADE;")
-                    conn.commit()
-            
-            # Create table if not exists with dynamic dimension
-            create_table_sql = f"""
-            CREATE EXTENSION IF NOT EXISTS vector;
-            CREATE TABLE IF NOT EXISTS chunk_embeddings (
-                id SERIAL PRIMARY KEY,
-                chunk_id VARCHAR(100) NOT NULL,
-                knowledge_base_id INTEGER NOT NULL,
-                document_id INTEGER NOT NULL,
-                content TEXT NOT NULL,
-                characters INTEGER NOT NULL,
-                chunk_number INTEGER NOT NULL,
-                embedding vector({embedding_dimension}),  -- Dynamic dimension based on embedding model
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_kb_id ON chunk_embeddings(knowledge_base_id);
-            CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_doc_id ON chunk_embeddings(document_id);
-            CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON chunk_embeddings(chunk_id);
-            """
-            
-            cursor.execute(create_table_sql)
-            conn.commit()
+            self._ensure_chunk_embeddings_table(cursor, conn, embedding_dimension)
             
             # Delete existing embeddings for this document
             delete_sql = """

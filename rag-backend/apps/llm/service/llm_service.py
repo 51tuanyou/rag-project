@@ -3,7 +3,7 @@ LLM Service for making API calls to language models
 """
 import requests
 import numpy as np
-from typing import List
+from typing import Any, Dict, List, Optional
 from apps.llm.models import ModelCredential
 
 
@@ -14,13 +14,38 @@ class LLMService:
         "deepseek",
         "tongyi",
         "doubao",
+        "custom",
     }
+    # Local / self-hosted providers that often run without an API key
+    KEYLESS_PROVIDERS = {
+        "ollama",
+        "custom",
+    }
+
+    # Local / self-hosted embedding servers (e.g. TEI/Xinference) often cap batch size
+    EMBEDDING_BATCH_SIZE = 64
 
     def __init__(self):
         pass
 
+    def _iter_batches(self, items: List[Any], batch_size: int):
+        size = max(1, int(batch_size))
+        for i in range(0, len(items), size):
+            yield items[i : i + size]
+
     def _is_openai_compatible(self, provider_slug: str) -> bool:
-        return provider_slug in self.OPENAI_COMPATIBLE_PROVIDERS
+        # Native Ollama uses /api/*; other providers use OpenAI-shaped HTTP APIs.
+        return provider_slug != "ollama"
+
+    def _requires_api_key(self, provider_slug: str) -> bool:
+        return provider_slug not in self.KEYLESS_PROVIDERS
+
+    def _auth_headers(self, api_key: Optional[str] = None) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        key = (api_key or "").strip()
+        if key and key.lower() not in {"ollama", "dummy", "none", "n/a"}:
+            headers["Authorization"] = f"Bearer {key}"
+        return headers
 
     def _normalize_model_id(self, model_id: str) -> str:
         """Strip accidental quotes/backticks from DB-entered model ids."""
@@ -28,10 +53,17 @@ class LLMService:
 
     def _normalize_base_url(self, base_url: str, provider_slug: str) -> str:
         """Normalize base URL for the provider's expected API path."""
+        import re
+
         url = (base_url or "").rstrip("/")
         # Native Ollama endpoints are /api/*, not /v1/*
         if provider_slug == "ollama" and url.endswith("/v1"):
-            url = url[:-3].rstrip("/")
+            return url[:-3].rstrip("/")
+
+        # OpenAI-compatible roots that already include a version suffix
+        # (e.g. .../v1, Volcengine Ark .../api/v3) must not get another /v1.
+        if provider_slug != "ollama" and not re.search(r"/v\d+$", url):
+            url = f"{url}/v1"
         return url
 
     def generate_response(self, prompt: str, model_credential: ModelCredential, max_tokens: int = 100) -> str:
@@ -40,7 +72,9 @@ class LLMService:
         """
         try:
             provider_slug = model_credential.provider.slug
-            api_key = self._get_api_key(model_credential, required=provider_slug != "ollama")
+            api_key = self._get_api_key(
+                model_credential, required=self._requires_api_key(provider_slug)
+            )
             base_url = self._get_base_url(model_credential)
 
             if self._is_openai_compatible(provider_slug):
@@ -93,7 +127,7 @@ class LLMService:
         """
         try:
             provider_slug = model.provider.slug
-            api_key = self._get_api_key(model, required=provider_slug != "ollama")
+            api_key = self._get_api_key(model, required=self._requires_api_key(provider_slug))
             base_url = self._get_base_url(model)
 
             if self._is_openai_compatible(provider_slug):
@@ -118,7 +152,7 @@ class LLMService:
         """
         try:
             provider_slug = model.provider.slug
-            api_key = self._get_api_key(model, required=provider_slug != "ollama")
+            api_key = self._get_api_key(model, required=self._requires_api_key(provider_slug))
             base_url = self._get_base_url(model)
 
             if self._is_openai_compatible(provider_slug):
@@ -136,6 +170,61 @@ class LLMService:
                 f"Failed to create embeddings: {str(e)}. "
                 "Please check your API configuration and network connection."
             )
+
+    def rerank(
+        self,
+        query: str,
+        documents: List[str],
+        model: ModelCredential,
+        top_n: Optional[int] = None,
+        normalize: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """
+        Call a local/OpenAI-style rerank HTTP service (POST {base}/v1/rerank).
+
+        Returns a list of {"index", "score", "document"} sorted by score desc.
+        """
+        if not documents:
+            return []
+
+        base_url = self._get_base_url(model).rstrip("/")
+        model_id = self._normalize_model_id(model.model_id or model.model_name)
+        endpoint = f"{base_url}/rerank" if base_url.endswith("/v1") else f"{base_url}/v1/rerank"
+
+        payload: Dict[str, Any] = {
+            "model": model_id,
+            "query": query,
+            "documents": documents,
+            "normalize": normalize,
+        }
+        if top_n is not None:
+            payload["top_n"] = top_n
+
+        headers = self._auth_headers(self._get_api_key(model, required=False))
+
+        print(f"Rerank API call - model={model_id}, url={endpoint}, docs={len(documents)}, top_n={top_n}")
+        response = requests.post(endpoint, json=payload, headers=headers, timeout=120)
+        if response.status_code != 200:
+            raise Exception(f"Rerank API error: {response.status_code} - {response.text[:500]}")
+
+        body = response.json()
+        data = body.get("data") if isinstance(body, dict) else None
+        if not isinstance(data, list):
+            raise Exception(f"Rerank API returned unexpected payload: {str(body)[:300]}")
+
+        results: List[Dict[str, Any]] = []
+        for item in data:
+            if not isinstance(item, dict) or "index" not in item:
+                continue
+            results.append(
+                {
+                    "index": int(item["index"]),
+                    "score": float(item.get("score", 0.0)),
+                    "document": item.get("document", ""),
+                }
+            )
+        results.sort(key=lambda r: r["score"], reverse=True)
+        return results
 
     def _get_api_key(self, model: ModelCredential, required: bool = True) -> str:
         """Get API key for the model"""
@@ -178,28 +267,41 @@ class LLMService:
     def _call_openai_embeddings(
         self, texts: List[str], api_key: str, base_url: str, model: ModelCredential
     ) -> List[List[float]]:
-        """Call OpenAI-compatible embeddings API"""
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        """Call OpenAI-compatible embeddings API in batches (max 64 texts/request)."""
+        if not texts:
+            return []
 
-        data = {
-            "input": texts,
-            "model": self._normalize_model_id(model.model_id),
-        }
+        headers = self._auth_headers(api_key)
+        model_id = self._normalize_model_id(model.model_id)
+        all_embeddings: List[List[float]] = []
+        batches = list(self._iter_batches(texts, self.EMBEDDING_BATCH_SIZE))
 
-        response = requests.post(
-            f"{base_url}/embeddings",
-            headers=headers,
-            json=data,
-            timeout=30,
-        )
+        for batch_idx, batch in enumerate(batches, start=1):
+            print(
+                f"Embedding batch {batch_idx}/{len(batches)}: "
+                f"{len(batch)} texts (model={model_id})"
+            )
+            response = requests.post(
+                f"{base_url}/embeddings",
+                headers=headers,
+                json={"input": batch, "model": model_id},
+                timeout=120,
+            )
+            if response.status_code != 200:
+                raise Exception(f"OpenAI API error: {response.status_code} - {response.text}")
 
-        if response.status_code == 200:
             result = response.json()
-            return [item["embedding"] for item in result["data"]]
-        raise Exception(f"OpenAI API error: {response.status_code} - {response.text}")
+            data = result.get("data") if isinstance(result, dict) else None
+            if not isinstance(data, list) or len(data) != len(batch):
+                raise Exception(
+                    f"Embedding API returned unexpected payload for batch {batch_idx}: "
+                    f"expected {len(batch)} vectors"
+                )
+            # Providers usually return objects with an index; sort to be safe
+            ordered = sorted(data, key=lambda item: item.get("index", 0))
+            all_embeddings.extend(item["embedding"] for item in ordered)
+
+        return all_embeddings
 
     def _call_ollama_embeddings(
         self, texts: List[str], base_url: str, model: ModelCredential
@@ -245,33 +347,45 @@ class LLMService:
     async def _call_openai_embeddings_async(
         self, texts: List[str], api_key: str, base_url: str, model: ModelCredential
     ) -> List[List[float]]:
-        """Call OpenAI-compatible embeddings API asynchronously"""
+        """Call OpenAI-compatible embeddings API asynchronously in batches."""
         import aiohttp
 
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        if not texts:
+            return []
 
-        data = {
-            "input": texts,
-            "model": self._normalize_model_id(model.model_id),
-        }
+        headers = self._auth_headers(api_key)
+        model_id = self._normalize_model_id(model.model_id)
+        all_embeddings: List[List[float]] = []
+        batches = list(self._iter_batches(texts, self.EMBEDDING_BATCH_SIZE))
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{base_url}/embeddings",
-                headers=headers,
-                json=data,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as response:
-                if response.status == 200:
+            for batch_idx, batch in enumerate(batches, start=1):
+                print(
+                    f"Embedding batch {batch_idx}/{len(batches)}: "
+                    f"{len(batch)} texts (model={model_id})"
+                )
+                async with session.post(
+                    f"{base_url}/embeddings",
+                    headers=headers,
+                    json={"input": batch, "model": model_id},
+                    timeout=aiohttp.ClientTimeout(total=120),
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise Exception(f"OpenAI API error {response.status}: {error_text}")
+
                     result = await response.json()
-                    embeddings = [item["embedding"] for item in result["data"]]
-                    print(f"Successfully created {len(embeddings)} OpenAI embeddings")
-                    return embeddings
-                error_text = await response.text()
-                raise Exception(f"OpenAI API error {response.status}: {error_text}")
+                    data = result.get("data") if isinstance(result, dict) else None
+                    if not isinstance(data, list) or len(data) != len(batch):
+                        raise Exception(
+                            f"Embedding API returned unexpected payload for batch {batch_idx}: "
+                            f"expected {len(batch)} vectors"
+                        )
+                    ordered = sorted(data, key=lambda item: item.get("index", 0))
+                    all_embeddings.extend(item["embedding"] for item in ordered)
+
+        print(f"Successfully created {len(all_embeddings)} OpenAI embeddings")
+        return all_embeddings
 
     async def _call_ollama_embeddings_async(
         self, texts: List[str], base_url: str, model: ModelCredential
@@ -339,10 +453,7 @@ class LLMService:
     ) -> str:
         """Call OpenAI-compatible chat completion API"""
         model_id = self._normalize_model_id(model.model_id)
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
+        headers = self._auth_headers(api_key)
 
         # Do NOT send stop sequences like <think>: thinking models often begin
         # with those tags, which would immediately stop generation (empty answer).

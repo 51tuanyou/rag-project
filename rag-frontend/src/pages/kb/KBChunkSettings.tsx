@@ -187,7 +187,7 @@ export default function KBChunkSettings() {
   const [questionFlag, setQuestionFlag] = useState(() => localStorage.getItem('kb.questionFlag') || 'Q: ')
   const [answerFlag, setAnswerFlag] = useState(() => localStorage.getItem('kb.answerFlag') || 'A: ')
   const [qaMaxLength, setQaMaxLength] = useState(() => localStorage.getItem('kb.qaMaxLength') || '1024')
-  type EmbeddingModel = { id: string; provider: string; label: string; tags?: string[] }
+  type EmbeddingModel = { id: string; provider: string; label: string; tags?: string[]; isManagement?: boolean }
   const [embeddingOptions, setEmbeddingOptions] = useState<EmbeddingModel[]>([])
   const [embedding, setEmbedding] = useState<EmbeddingModel | null>(null)
   
@@ -203,8 +203,10 @@ export default function KBChunkSettings() {
   
   const [highlighted, setHighlighted] = useState<EmbeddingModel | null>(null)
   const [rerankEnabled, setRerankEnabled] = useState(() => localStorage.getItem('kb.rerankEnabled') === 'true')
-  const [rerankModel, setRerankModel] = useState(() => localStorage.getItem('kb.rerankModel') || 'qte-rerank')
-  const [rerankOptions, setRerankOptions] = useState<string[]>(['qte-rerank'])
+  type RerankModel = { id: string; provider: string; label: string; tags?: string[]; isManagement?: boolean }
+  const [rerankOptions, setRerankOptions] = useState<RerankModel[]>([])
+  const [selectedRerank, setSelectedRerank] = useState<RerankModel | null>(null)
+  const [highlightedRerank, setHighlightedRerank] = useState<RerankModel | null>(null)
   const [retrievalMode, setRetrievalMode] = useState<'vector' | 'fulltext' | 'hybrid'>(() => (localStorage.getItem('kb.retrievalMode') as 'vector' | 'fulltext' | 'hybrid') || 'vector')
   const [topK, setTopK] = useState(() => parseInt(localStorage.getItem('kb.topK') || '3'))
   const [scoreEnabled, setScoreEnabled] = useState(() => localStorage.getItem('kb.scoreEnabled') === 'true')
@@ -460,20 +462,40 @@ export default function KBChunkSettings() {
     loadEmbeddingModels()
   }, [])
 
-  // Load rerank models from backend
+  // Load rerank models from backend (grouped by provider, same UX as Embedding Model)
   useEffect(() => {
     const loadRerankModels = async () => {
       try {
         const res = await fetch(`${API_BASE}/api/llm/models/?enabled=true&model_type=${encodeURIComponent('Rerank')}`)
         const data = await res.json()
         const models = data.results || data
-        const names = (models as { model_name?: string; model_id?: string }[])
-          .map(m => m.model_name || m.model_id)
-          .filter((n): n is string => Boolean(n))
-        const options = names.length > 0 ? names : ['qte-rerank']
-        setRerankOptions(options)
-        if (!options.includes(rerankModel)) {
-          setRerankModel(options[0])
+        const groupedModels: RerankModel[] = models.map((model: any) => ({
+          id: model.id.toString(),
+          provider: model.provider,
+          label: model.model_name,
+          tags: ['Rerank'],
+        }))
+
+        const hasModels = groupedModels.length > 0
+        const managementOption: RerankModel = {
+          id: 'manage-llm-rerank',
+          provider: hasModels ? '' : 'No Rerank Models Configured',
+          label: 'Manage LLM',
+          tags: ['MANAGEMENT'],
+          isManagement: true,
+        }
+
+        setRerankOptions(hasModels ? [...groupedModels, managementOption] : [managementOption])
+        if (hasModels) {
+          const savedId = localStorage.getItem('kb.rerankId')
+          const savedName = localStorage.getItem('kb.rerankModel')
+          const saved =
+            (savedId && groupedModels.find(m => m.id === savedId)) ||
+            (savedName && groupedModels.find(m => m.label === savedName)) ||
+            null
+          setSelectedRerank(saved || groupedModels[0])
+        } else {
+          setSelectedRerank(null)
         }
       } catch (error) {
         console.error('Failed to load rerank models:', error)
@@ -494,7 +516,12 @@ export default function KBChunkSettings() {
   useEffect(() => { localStorage.setItem('kb.qaLanguage', qaLanguage) }, [qaLanguage])
   useEffect(() => { localStorage.setItem('kb.indexMethod', indexMethod) }, [indexMethod])
   useEffect(() => { localStorage.setItem('kb.rerankEnabled', rerankEnabled.toString()) }, [rerankEnabled])
-  useEffect(() => { localStorage.setItem('kb.rerankModel', rerankModel) }, [rerankModel])
+  useEffect(() => {
+    if (selectedRerank && !selectedRerank.isManagement) {
+      localStorage.setItem('kb.rerankModel', selectedRerank.label)
+      localStorage.setItem('kb.rerankId', selectedRerank.id)
+    }
+  }, [selectedRerank])
   useEffect(() => { localStorage.setItem('kb.retrievalMode', retrievalMode) }, [retrievalMode])
   useEffect(() => { localStorage.setItem('kb.topK', topK.toString()) }, [topK])
   useEffect(() => { localStorage.setItem('kb.scoreEnabled', scoreEnabled.toString()) }, [scoreEnabled])
@@ -796,6 +823,7 @@ export default function KBChunkSettings() {
       localStorage.removeItem('kb.indexMethod')
       localStorage.removeItem('kb.rerankEnabled')
       localStorage.removeItem('kb.rerankModel')
+      localStorage.removeItem('kb.rerankId')
       localStorage.removeItem('kb.retrievalMode')
       localStorage.removeItem('kb.topK')
       localStorage.removeItem('kb.scoreEnabled')
@@ -817,7 +845,7 @@ export default function KBChunkSettings() {
       setQaLanguage('English')
       setIndexMethod('hq')
       setRerankEnabled(false)
-      setRerankModel('qte-rerank')
+      setSelectedRerank(null)
       setRetrievalMode('vector')
       setTopK(3)
       setScoreEnabled(false)
@@ -1291,12 +1319,47 @@ export default function KBChunkSettings() {
               <Typography variant="body2" color="text.secondary">Generate query embeddings and search for the text chunk most similar to its vector representation.</Typography>
               {retrievalMode === 'vector' && (
                 <Box sx={{ mt: 2 }}>
-                  <FormControlLabel control={<Switch checked={rerankEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
-                  <Select size="small" disabled={isFromDocuments} value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ ml: 2 }}>
-                    {rerankOptions.map(name => (
-                      <MenuItem key={name} value={name}>{name}</MenuItem>
-                    ))}
-                  </Select>
+                  <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
+                    <FormControlLabel control={<Switch checked={rerankEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
+                    <Autocomplete
+                      sx={{ width: 360 }}
+                      options={rerankOptions}
+                      groupBy={(o) => o.provider}
+                      getOptionLabel={(o) => o.label}
+                      isOptionEqualToValue={(a, b) => a.id === b.id}
+                      value={selectedRerank}
+                      disabled={isFromDocuments || !rerankEnabled}
+                      onChange={(_, v) => {
+                        if (v && v.isManagement) {
+                          navigate('/manage/llm')
+                        } else {
+                          setSelectedRerank(v)
+                        }
+                      }}
+                      onHighlightChange={(_, v) => setHighlightedRerank(v)}
+                      renderInput={(params) => <TextField {...params} size="small" placeholder="Please select a rerank model" />}
+                      renderOption={(props, option) => (
+                        <li {...props} key={option.id} style={{ position: 'relative' }}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography color={option.isManagement ? 'primary.main' : 'inherit'}>
+                              {option.label}
+                            </Typography>
+                            {option.isManagement && (
+                              <Typography variant="caption" color="primary.main">→</Typography>
+                            )}
+                          </Stack>
+                          {highlightedRerank?.id === option.id && !option.isManagement && (
+                            <Paper elevation={3} style={{ position: 'absolute', left: 'calc(100% + 8px)', top: 0, width: 240, padding: 12 }}>
+                              <Typography fontWeight={600}>{option.label}</Typography>
+                              <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
+                                {(option.tags ?? ['Rerank']).map(t => <Chip key={t} size="small" label={t} />)}
+                              </Stack>
+                            </Paper>
+                          )}
+                        </li>
+                      )}
+                    />
+                  </Stack>
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
                       <Typography variant="caption">Top K</Typography>
@@ -1325,12 +1388,47 @@ export default function KBChunkSettings() {
               <Typography variant="body2" color="text.secondary">Index all terms in the document, allowing users to search any term and retrieve relevant text chunk containing those terms.</Typography>
               {retrievalMode === 'fulltext' && (
                 <Box sx={{ mt: 2 }}>
-                  <FormControlLabel control={<Switch checked={rerankEnabled} onChange={(_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
-                  <Select size="small" disabled={!rerankEnabled} value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ ml: 2 }}>
-                    {rerankOptions.map(name => (
-                      <MenuItem key={name} value={name}>{name}</MenuItem>
-                    ))}
-                  </Select>
+                  <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
+                    <FormControlLabel control={<Switch checked={rerankEnabled} onChange={(_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
+                    <Autocomplete
+                      sx={{ width: 360 }}
+                      options={rerankOptions}
+                      groupBy={(o) => o.provider}
+                      getOptionLabel={(o) => o.label}
+                      isOptionEqualToValue={(a, b) => a.id === b.id}
+                      value={selectedRerank}
+                      disabled={!rerankEnabled}
+                      onChange={(_, v) => {
+                        if (v && v.isManagement) {
+                          navigate('/manage/llm')
+                        } else {
+                          setSelectedRerank(v)
+                        }
+                      }}
+                      onHighlightChange={(_, v) => setHighlightedRerank(v)}
+                      renderInput={(params) => <TextField {...params} size="small" placeholder="Please select a rerank model" />}
+                      renderOption={(props, option) => (
+                        <li {...props} key={option.id} style={{ position: 'relative' }}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography color={option.isManagement ? 'primary.main' : 'inherit'}>
+                              {option.label}
+                            </Typography>
+                            {option.isManagement && (
+                              <Typography variant="caption" color="primary.main">→</Typography>
+                            )}
+                          </Stack>
+                          {highlightedRerank?.id === option.id && !option.isManagement && (
+                            <Paper elevation={3} style={{ position: 'absolute', left: 'calc(100% + 8px)', top: 0, width: 240, padding: 12 }}>
+                              <Typography fontWeight={600}>{option.label}</Typography>
+                              <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
+                                {(option.tags ?? ['Rerank']).map(t => <Chip key={t} size="small" label={t} />)}
+                              </Stack>
+                            </Paper>
+                          )}
+                        </li>
+                      )}
+                    />
+                  </Stack>
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
                       <Typography variant="caption">Top K</Typography>
@@ -1370,11 +1468,44 @@ export default function KBChunkSettings() {
                       <Typography variant="body2" color="text.secondary">Rerank model will reorder the candidate document list based on the semantic match with user query, improving the results of semantic ranking</Typography>
                     </Paper>
                   </Stack>
-                  <Select size="small" disabled={isFromDocuments} value={rerankModel} onChange={e => setRerankModel(e.target.value)} sx={{ mt: 2 }}>
-                    {rerankOptions.map(name => (
-                      <MenuItem key={name} value={name}>{name}</MenuItem>
-                    ))}
-                  </Select>
+                  <Autocomplete
+                    sx={{ width: 360, mt: 2 }}
+                    options={rerankOptions}
+                    groupBy={(o) => o.provider}
+                    getOptionLabel={(o) => o.label}
+                    isOptionEqualToValue={(a, b) => a.id === b.id}
+                    value={selectedRerank}
+                    disabled={isFromDocuments || hybridStrategy !== 'rerank'}
+                    onChange={(_, v) => {
+                      if (v && v.isManagement) {
+                        navigate('/manage/llm')
+                      } else {
+                        setSelectedRerank(v)
+                      }
+                    }}
+                    onHighlightChange={(_, v) => setHighlightedRerank(v)}
+                    renderInput={(params) => <TextField {...params} size="small" placeholder="Please select a rerank model" />}
+                    renderOption={(props, option) => (
+                      <li {...props} key={option.id} style={{ position: 'relative' }}>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Typography color={option.isManagement ? 'primary.main' : 'inherit'}>
+                            {option.label}
+                          </Typography>
+                          {option.isManagement && (
+                            <Typography variant="caption" color="primary.main">→</Typography>
+                          )}
+                        </Stack>
+                        {highlightedRerank?.id === option.id && !option.isManagement && (
+                          <Paper elevation={3} style={{ position: 'absolute', left: 'calc(100% + 8px)', top: 0, width: 240, padding: 12 }}>
+                            <Typography fontWeight={600}>{option.label}</Typography>
+                            <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
+                              {(option.tags ?? ['Rerank']).map(t => <Chip key={t} size="small" label={t} />)}
+                            </Stack>
+                          </Paper>
+                        )}
+                      </li>
+                    )}
+                  />
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
                       <Typography variant="caption">Top K</Typography>

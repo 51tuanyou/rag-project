@@ -102,6 +102,13 @@ export default function RetrievalTest() {
     setError(null) // Clear any previous errors
     
     try {
+      const topK = Number(localStorage.getItem('kb.topK') || 3)
+      const rerankEnabled =
+        localStorage.getItem('kb.rerankEnabled') === 'true' ||
+        (localStorage.getItem('kb.retrievalMode') === 'hybrid' &&
+          localStorage.getItem('kb.hybridStrategy') === 'rerank')
+      const rerankModel = localStorage.getItem('kb.rerankModel') || ''
+
       const response = await fetch(`${API_BASE}/api/kb/perform-retrieval-test/`, {
         method: 'POST',
         headers: {
@@ -110,7 +117,9 @@ export default function RetrievalTest() {
         body: JSON.stringify({
           query_text: sourceText,
           knowledge_base_id: kbId,
-          top_k: 3
+          top_k: Number.isFinite(topK) && topK > 0 ? topK : 3,
+          rerank_enabled: rerankEnabled,
+          rerank_model_name: rerankModel,
         })
       })
       

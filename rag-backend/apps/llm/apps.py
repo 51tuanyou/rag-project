@@ -16,6 +16,7 @@ class LlmConfig(AppConfig):
                 ("tongyi", "TONGYI"),
                 ("ollama", "Ollama"),
                 ("doubao", "DouBao"),
+                ("custom", "Custom"),
             ]
             for slug, name in defaults:
                 Provider.objects.get_or_create(slug=slug, defaults={"display_name": name})

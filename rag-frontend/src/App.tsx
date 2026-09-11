@@ -306,11 +306,18 @@ function App() {
     setCompose('')
 
     // Clear previous logs and add new ones
+    const rerankEnabled =
+      localStorage.getItem('kb.rerankEnabled') === 'true' ||
+      (localStorage.getItem('kb.retrievalMode') === 'hybrid' &&
+        localStorage.getItem('kb.hybridStrategy') === 'rerank')
+    const rerankModel = localStorage.getItem('kb.rerankModel') || ''
+
     setLogs([
       `执行逻辑（${now}）：`,
       `用户选择了知识库：${selectedKb?.display_name || '未选择'}`,
       `用户选择了LLM：${selectedLlm?.label || '未选择'}`,
       `检索分块数量：${chunk}`,
+      `Rerank：${rerankEnabled ? `是 (${rerankModel || '默认'})` : '否'}`,
       `返回原文档：${returnOriginal ? '是' : '否'}`,
       `打开原文档：${openOriginal ? '是' : '否'}`,
       `用户问题：${text}`,
@@ -326,6 +333,8 @@ function App() {
         max_tokens: 2000,
         return_original: returnOriginal,
         open_original: openOriginal,
+        rerank_enabled: rerankEnabled,
+        rerank_model_name: rerankModel,
       }
 
       // Call chat API

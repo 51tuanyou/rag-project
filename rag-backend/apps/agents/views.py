@@ -241,6 +241,8 @@ def chat(request):
         max_tokens = int(data.get('max_tokens', 500))
         return_original = _as_bool(data.get('return_original'))
         open_original = _as_bool(data.get('open_original'))
+        rerank_enabled = _as_bool(data.get('rerank_enabled'))
+        rerank_model_name = (data.get('rerank_model_name') or data.get('rerank_model') or '').strip()
         
         if not message:
             return Response({'error': 'Message is required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -280,10 +282,17 @@ def chat(request):
             try:
                 retrieval_service = RetrievalService()
                 if search_all_kbs:
-                    similar_chunks, db_results = retrieval_service.perform_retrieval_all_knowledge_bases(
-                        message, chunk_count
+                    if rerank_enabled:
+                        logs.append(f"Rerank 已启用，模型: {rerank_model_name or '(默认 Rerank 凭证)'}")
+                    similar_chunks, db_results, kb_warnings = retrieval_service.perform_retrieval_all_knowledge_bases(
+                        message,
+                        chunk_count,
+                        rerank_enabled=rerank_enabled,
+                        rerank_model_name=rerank_model_name or None,
                     )
-                    logs.append("   检索范围: 全部知识库")
+                    logs.append(f"   检索范围: 全部知识库（共扫描后召回候选）")
+                    for w in kb_warnings:
+                        logs.append(f"   警告: {w}")
                 else:
                     # Get knowledge base by ID
                     kb = KnowledgeBase.objects.filter(id=knowledge_base_id).first()
@@ -292,13 +301,21 @@ def chat(request):
                                       status=status.HTTP_404_NOT_FOUND)
                     
                     logs.append(f"   知识库名称: {kb.name}")
+                    if rerank_enabled:
+                        logs.append(f"Rerank 已启用，模型: {rerank_model_name or '(默认 Rerank 凭证)'}")
                     
                     # Perform retrieval
                     similar_chunks, db_results = retrieval_service.perform_retrieval_test(
-                        message, kb.id, chunk_count
+                        message,
+                        kb.id,
+                        chunk_count,
+                        rerank_enabled=rerank_enabled,
+                        rerank_model_name=rerank_model_name or None,
                     )
                 
                 logs.append(f"检索到 {len(similar_chunks)} 个相关分块")
+                if similar_chunks and similar_chunks[0].get("reranked"):
+                    logs.append("分块顺序已按 Rerank 分数重排")
                 
                 # Prepare context from retrieved chunks
                 context_parts = []
