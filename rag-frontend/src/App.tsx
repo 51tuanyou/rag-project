@@ -14,6 +14,7 @@ import {
   Checkbox,
   FormControlLabel,
   Link,
+  Tooltip,
 } from '@mui/material'
 import Dialog from '@mui/material/Dialog'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -34,6 +35,14 @@ import { API_BASE, apiFetch } from './apiBase'
 import ChatMessageContent from './ChatMessageContent'
 
 type SourceDocument = { id: number; file_name: string; url: string }
+type RetrievedChunk = {
+  index: number
+  source_document: string
+  similarity_score: number
+  content: string
+  chunk_id?: number | string
+  document_id?: number
+}
 type ChatMessage = { role: 'assistant' | 'user'; content: string; timestamp?: string; sources?: SourceDocument[] }
 type LLMModel = { id: string; provider: string; label: string; tags?: string[]; isManagement?: boolean }
 type SelectedKb = { id: number | 'all'; display_name: string; isSpecial?: boolean }
@@ -66,6 +75,75 @@ function App() {
   const [compose, setCompose] = useState('')
 
   const [logs, setLogs] = useState<string[]>([])
+  const [retrievedChunks, setRetrievedChunks] = useState<RetrievedChunk[]>([])
+
+  const parseLogsWithChunks = (rawLogs: string[] | string) => {
+    const lines = Array.isArray(rawLogs) ? rawLogs : String(rawLogs || '').split('\n')
+    const meta = lines.find(l => l.startsWith('__RETRIEVED_CHUNKS__'))
+    let chunks: RetrievedChunk[] = []
+    if (meta) {
+      try {
+        chunks = JSON.parse(meta.slice('__RETRIEVED_CHUNKS__'.length))
+      } catch {
+        chunks = []
+      }
+    }
+    return {
+      logs: lines.filter(l => !l.startsWith('__RETRIEVED_CHUNKS__')),
+      chunks,
+    }
+  }
+
+  const chunkByIndex = (index: number) =>
+    retrievedChunks.find(c => c.index === index)
+
+  const renderChunkLogLine = (line: string, key: string | number) => {
+    const m = line.trim().match(/^- 分块\s+(\d+):\s*(.*)$/)
+    if (!m) {
+      return <div key={key}>{line}</div>
+    }
+    const idx = Number(m[1])
+    const chunk = chunkByIndex(idx)
+    const label = line.trim()
+    return (
+      <Tooltip
+        key={key}
+        arrow
+        placement="left"
+        enterDelay={200}
+        title={
+          <Box sx={{ maxWidth: 420, maxHeight: 360, overflow: 'auto', p: 0.5 }}>
+            <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.75 }}>
+              分块 {idx}
+              {chunk?.similarity_score != null ? ` · 相似度 ${Number(chunk.similarity_score).toFixed(3)}` : ''}
+            </Typography>
+            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {chunk?.content?.trim() || '（无完整分块内容）'}
+            </Typography>
+          </Box>
+        }
+      >
+        <Box
+          component="span"
+          sx={{
+            display: 'inline-block',
+            color: 'primary.main',
+            backgroundColor: '#e6f4ff',
+            px: 0.75,
+            py: 0.25,
+            borderRadius: 1,
+            cursor: 'pointer',
+            textDecoration: 'none',
+            maxWidth: '100%',
+            wordBreak: 'break-word',
+          }}
+        >
+          {label}
+        </Box>
+      </Tooltip>
+    )
+  }
+
   const renderLogs = useMemo(() => {
     const label = 'RAG提示词内容:'
     return logs.map((t, i) => {
@@ -74,9 +152,15 @@ function App() {
         const lines = t.split('\n')
         return (
           <div key={i} style={{ marginBottom: 6, lineHeight: 1.6 }}>
-            {lines.map((line, idx) => (
-              <div key={idx}>{line}</div>
-            ))}
+            {lines.map((line, idx) => renderChunkLogLine(line, `${i}-${idx}`))}
+          </div>
+        )
+      }
+      // History may split the multi-line chunk block into single lines
+      if (t.trim().startsWith('- 分块')) {
+        return (
+          <div key={i} style={{ marginBottom: 6, lineHeight: 1.6 }}>
+            {renderChunkLogLine(t, i)}
           </div>
         )
       }
@@ -99,7 +183,7 @@ function App() {
         </div>
       )
     })
-  }, [logs])
+  }, [logs, retrievedChunks])
   
   // Refs for auto-scrolling
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -322,6 +406,7 @@ function App() {
       `打开原文档：${openOriginal ? '是' : '否'}`,
       `用户问题：${text}`,
     ])
+    setRetrievedChunks([])
 
     try {
       // Prepare request data
@@ -353,6 +438,10 @@ function App() {
 
       const data = await response.json()
       const sources: SourceDocument[] = Array.isArray(data.source_documents) ? data.source_documents : []
+      const parsed = parseLogsWithChunks(Array.isArray(data.logs) ? data.logs : [])
+      const chunksFromApi: RetrievedChunk[] = Array.isArray(data.retrieved_chunks)
+        ? data.retrieved_chunks
+        : parsed.chunks
       
       // Add response to messages
       setMessages(prev => [
@@ -366,10 +455,8 @@ function App() {
       ])
 
       // Update logs with detailed execution steps
-      setLogs(prev => [
-        ...prev,
-        ...data.logs
-      ])
+      setRetrievedChunks(chunksFromApi)
+      setLogs(prev => [...prev, ...parsed.logs])
 
     } catch (error) {
       console.error('Chat API error:', error)
@@ -639,9 +726,21 @@ function App() {
                 placeholder="请输入文本"
                 value={compose}
                 onChange={e => setCompose(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend() } }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    if (compose.trim()) onSend()
+                  }
+                }}
               />
-              <Button variant="contained" onClick={onSend} sx={{ minWidth: 88 }}>发送</Button>
+              <Button
+                variant="contained"
+                onClick={onSend}
+                disabled={!compose.trim()}
+                sx={{ minWidth: 88 }}
+              >
+                发送
+              </Button>
             </Stack>
           </Paper>
         </Box>
@@ -672,7 +771,9 @@ function App() {
                       { role: 'user', content: `${h.question}（历史记录）`, timestamp: h.created_at },
                       { role: 'assistant', content: `${h.response}（历史记录）`, timestamp: h.created_at },
                     ])
-                    setLogs((h.logs || '').split('\n'))
+                    const parsed = parseLogsWithChunks(h.logs || '')
+                    setRetrievedChunks(parsed.chunks)
+                    setLogs(parsed.logs)
                     setIsHistoryView(true)
                     setHistoryOpen(false)
                     setTimeout(() => { scrollToBottomMessages(); scrollToBottomLogs(); }, 50)

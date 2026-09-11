@@ -11,6 +11,7 @@ from apps.llm.models import ModelCredential
 from .models import QueryHistory
 from apps.kb.models import KnowledgeBase, Document
 import asyncio
+import json
 import re
 
 
@@ -88,6 +89,10 @@ def _dedupe_markdown_tables(text: str) -> str:
 
 def _select_chunk_indices_with_llm(message: str, similar_chunks: list, llm_service, llm_model, max_tokens: int) -> list[int]:
     """Ask LLM only for relevant chunk indexes — do not rewrite table text."""
+    def _fallback_top_ranked() -> list[int]:
+        """Retrieval list is already similarity/rerank ordered; prefer #1."""
+        return [1] if similar_chunks else [1]
+
     listing = []
     for i, chunk in enumerate(similar_chunks, 1):
         content = chunk.get("content") or ""
@@ -106,8 +111,29 @@ def _select_chunk_indices_with_llm(message: str, similar_chunks: list, llm_servi
 {chr(10).join(listing)}
 """
     try:
-        raw = llm_service.generate_response(prompt, llm_model, min(max_tokens, 64))
-        nums = [int(x) for x in re.findall(r"\d+", raw or "")]
+        raw = (llm_service.generate_response(prompt, llm_model, min(max_tokens, 64)) or "").strip()
+        # generate_response swallows API failures into Chinese error strings.
+        # Digits in those strings (model id / HTTP 404) must NOT become chunk picks.
+        if (
+            not raw
+            or raw.startswith("错误：")
+            or raw.startswith("抱歉")
+            or "API error" in raw
+            or "API调用" in raw
+        ):
+            print(f"Chunk selection LLM failed/unavailable, fallback to rank#1: {raw[:200]}")
+            return _fallback_top_ranked()
+
+        # Accept only a clean index list (e.g. "2" / "1,3"), not free-form prose with stray digits
+        compact = raw.replace("，", ",").replace("、", ",")
+        if not re.fullmatch(r"\d+(?:\s*,\s*\d+)*", compact):
+            m = re.search(r"\d+(?:\s*[,，、]\s*\d+)*", compact)
+            if not m:
+                print(f"Chunk selection LLM returned unusable text, fallback to rank#1: {raw[:200]}")
+                return _fallback_top_ranked()
+            compact = m.group(0).replace("，", ",").replace("、", ",")
+
+        nums = [int(x) for x in re.findall(r"\d+", compact)]
         valid = [n for n in nums if 1 <= n <= len(similar_chunks)]
         seen = set()
         ordered = []
@@ -116,7 +142,7 @@ def _select_chunk_indices_with_llm(message: str, similar_chunks: list, llm_servi
                 seen.add(n)
                 ordered.append(n)
         if not ordered:
-            ordered = [1]
+            return _fallback_top_ranked()
         # Upgrade tiny stubs to the longest retrieved chunk when needed
         upgraded = []
         for n in ordered:
@@ -141,16 +167,10 @@ def _select_chunk_indices_with_llm(message: str, similar_chunks: list, llm_servi
             if n not in seen2:
                 seen2.add(n)
                 out.append(n)
-        return out or [1]
-    except Exception:
-        # Fallback: longest chunk
-        if not similar_chunks:
-            return [1]
-        best_i = max(
-            range(len(similar_chunks)),
-            key=lambda i: len(similar_chunks[i].get("content") or ""),
-        )
-        return [best_i + 1]
+        return out or _fallback_top_ranked()
+    except Exception as e:
+        print(f"Chunk selection exception, fallback to rank#1: {e}")
+        return _fallback_top_ranked()
 
 
 @api_view(['POST'])
@@ -268,6 +288,7 @@ def chat(request):
         logs = []
         response_text = ""
         source_documents = []
+        retrieved_chunks = []
         
         # Check if knowledge base is selected
         search_all_kbs = knowledge_base_id in ("all", "ALL", -1, "-1")
@@ -320,12 +341,26 @@ def chat(request):
                 # Prepare context from retrieved chunks
                 context_parts = []
                 chunk_log_lines = []
+                retrieved_chunks = []
                 for i, chunk in enumerate(similar_chunks, 1):
-                    context_parts.append(f"分块 {i} (相似度: {chunk['similarity_score']:.3f}):\n{chunk['content']}")
+                    content = chunk.get("content") or ""
+                    retrieved_chunks.append({
+                        "index": i,
+                        "source_document": chunk.get("source_document") or "",
+                        "similarity_score": chunk.get("similarity_score"),
+                        "content": content,
+                        "chunk_id": chunk.get("chunk_id"),
+                        "document_id": chunk.get("document_id"),
+                    })
+                    context_parts.append(f"分块 {i} (相似度: {chunk['similarity_score']:.3f}):\n{content}")
                     # 将各分块信息汇总到一条日志中，避免前端对每行单独编号
-                    chunk_log_lines.append(f"   - 分块 {i}: {chunk['source_document']} (相似度: {chunk['similarity_score']:.3f})")
+                    chunk_log_lines.append(
+                        f"   - 分块 {i}: {chunk['source_document']} (相似度: {chunk['similarity_score']:.3f})"
+                    )
                 if chunk_log_lines:
                     logs.append("\n".join(chunk_log_lines))
+                    # Hidden meta line for history hover (parsed/stripped by frontend)
+                    logs.append("__RETRIEVED_CHUNKS__" + json.dumps(retrieved_chunks, ensure_ascii=False))
                 
                 context = "\n\n".join(context_parts)
                 
@@ -339,13 +374,15 @@ def chat(request):
                     selected_indices: list[int] = []
                     llm_service = LLMService()
                     if return_original:
-                        # Do NOT ask the LLM to rewrite tables — that caused duplicate
-                        # incomplete tables. Select relevant chunks, return their text as-is.
-                        logs.append("已启用「返回原文档」：由模型选择分块，直接返回原文（不重写表格）")
-                        selected_indices = _select_chunk_indices_with_llm(
-                            message, similar_chunks, llm_service, llm_model, max_tokens
+                        # Retrieval list is already vector/rerank ordered. Return original
+                        # text from the top chunk(s) — do not re-ask the LLM to pick indexes
+                        # (that ignored scores and often preferred longer lower-ranked stubs).
+                        top_n = max(1, min(len(similar_chunks), 1))
+                        selected_indices = list(range(1, top_n + 1))
+                        logs.append(
+                            "已启用「返回原文档」：按检索/Rerank 排序直接返回原文"
+                            f"（分块 {selected_indices}，不重写表格）"
                         )
-                        logs.append(f"模型选中分块编号: {selected_indices}")
                         parts = []
                         for idx in selected_indices:
                             chunk = similar_chunks[idx - 1]
@@ -489,6 +526,7 @@ def chat(request):
             'character_count': len(response_text),
             'max_tokens': max_tokens,
             'source_documents': source_documents if open_original else [],
+            'retrieved_chunks': retrieved_chunks,
             'return_original': return_original,
             'open_original': open_original,
         })
