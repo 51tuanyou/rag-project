@@ -51,7 +51,7 @@ export default function KBChunkSettings() {
   const [indexMethod, setIndexMethod] = useState<'hq' | 'eco'>(() => (localStorage.getItem('kb.indexMethod') as 'hq' | 'eco') || 'hq')
   
   // Chunk preview state
-  const [chunks, setChunks] = useState<Array<{id: string; content: string; characters: number}>>([])
+  const [chunks, setChunks] = useState<Array<{id: string; content: string; characters: number; chunk_number?: number}>>([])
   const [showPreview, setShowPreview] = useState(false)
   const [editingChunk, setEditingChunk] = useState<string | null>(null)
   const [editingChunkContent, setEditingChunkContent] = useState('')
@@ -65,7 +65,7 @@ export default function KBChunkSettings() {
   const [snackbarMessage, setSnackbarMessage] = useState('')
   
   // Chunks from database state
-  const [dbChunks, setDbChunks] = useState<Array<{id: string; content: string; characters: number}>>([])
+  const [dbChunks, setDbChunks] = useState<Array<{id: string; content: string; characters: number; chunk_number?: number}>>([])
   const [loadingChunks, setLoadingChunks] = useState(false)
   
   // Chunk settings from database
@@ -1625,7 +1625,10 @@ export default function KBChunkSettings() {
                 {currentChunks.map((chunk, index) => (
                   <Paper key={chunk.id} variant="outlined" sx={{ p: 1.5 }}>
                     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                      <Typography variant="caption" color="text.secondary">{chunk.id} · {chunk.characters} {t('characters')}</Typography>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                        {t('chunkNumber', { number: chunk.chunk_number ?? startIndex + index + 1 })}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">{chunk.characters} {t('characters')}</Typography>
                       <Box sx={{ flex: 1 }} />
                       <Button 
                         size="small" 

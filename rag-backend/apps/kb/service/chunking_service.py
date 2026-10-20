@@ -353,8 +353,6 @@ class ChunkingService:
                     "id": "toc_1",
                     "content": body,
                     "characters": len(body),
-                    "embedding_text": body[:200] if body else "",
-                    "title": "",
                 }
             ] if body else []
 
@@ -369,8 +367,6 @@ class ChunkingService:
                     "id": "toc_1",
                     "content": body,
                     "characters": len(body),
-                    "embedding_text": body[:200] if body else "",
-                    "title": "",
                 }
             ] if body else []
 
@@ -408,8 +404,6 @@ class ChunkingService:
                     "id": f"toc_{len(chunks) + 1}",
                     "content": body,
                     "characters": len(body),
-                    "embedding_text": anchor["label"],
-                    "title": anchor["label"],
                 }
             )
 

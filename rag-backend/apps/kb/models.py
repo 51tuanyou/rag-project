@@ -96,7 +96,7 @@ class Chunk(models.Model):
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name='chunks')
     chunk_id = models.CharField(max_length=100)
     content = models.TextField()
-    # Text used for embedding/retrieval (e.g. Q&A question, TOC section title). Falls back to content.
+    # Text used for embedding/retrieval (e.g. the Q&A question). Empty means embed the full content.
     embedding_text = models.TextField(blank=True, null=True, help_text="Text used for vector embedding")
     characters = models.IntegerField()
     word_count = models.IntegerField(default=0, help_text="Word count of this chunk")
