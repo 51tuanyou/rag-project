@@ -19,10 +19,12 @@ import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { AppTitle, useI18n } from '../../i18n'
 
 type FileItem = { id: string; file: File; uploadedPath?: string }
 
 export default function KBUpload() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const [files, setFiles] = useState<FileItem[]>([])
@@ -93,20 +95,18 @@ export default function KBUpload() {
   return (
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
       <Box sx={{ maxWidth: 'md', width: '100%', px: 2 }}>
-        <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-          RAG Tool
-        </Typography>
+        <AppTitle />
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-        <Typography variant="h6">Upload file</Typography>
+        <Typography variant="h6">{t('uploadFile')}</Typography>
         <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
-          返回管理知识库
+          {t('backToKb')}
         </Button>
       </Stack>
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }} onDragOver={e => e.preventDefault()} onDrop={onDrop}>
         <Stack spacing={1} alignItems="center" justifyContent="center" sx={{ color: 'text.secondary' }}>
           <UploadFileIcon />
-          <Typography>Drag and drop file or folder, or <Button size="small" onClick={openPicker}>Browse</Button></Typography>
-          <Typography variant="caption">Supports TXT, MARKDOWN, MDX, PDF, HTML, XLSX, XLS, DOCX, CSV, VTT, MD, HTM. Max 5 in a batch and 15 MB each.</Typography>
+          <Typography>{t('dragDrop')} <Button size="small" onClick={openPicker}>{t('browse')}</Button></Typography>
+          <Typography variant="caption">{t('uploadHint')}</Typography>
         </Stack>
         <input ref={inputRef} type="file" multiple hidden onChange={e => onFiles(e.target.files)} />
       </Paper>
@@ -132,7 +132,7 @@ export default function KBUpload() {
 
       <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
         <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
-          Previous step
+          {t('previousStep')}
         </Button>
         <Box sx={{ flex: 1 }} />
         <Button 
@@ -140,7 +140,7 @@ export default function KBUpload() {
           disabled={files.length === 0 || uploading}
           onClick={() => navigate('/manage/kb/chunk', { state: { files: files.map(f => f.uploadedPath || f.file.name) } })}
         >
-          {uploading ? 'Uploading...' : 'Next'}
+          {uploading ? t('uploading') : t('next')}
         </Button>
       </Stack>
       </Box>

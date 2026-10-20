@@ -9,6 +9,8 @@ import {
   Typography,
   TextField,
   Chip,
+  CircularProgress,
+  LinearProgress,
   Alert,
   AlertTitle,
   Checkbox,
@@ -33,6 +35,7 @@ import LibraryBooks from '@mui/icons-material/LibraryBooks'
 import WarningIcon from '@mui/icons-material/Warning'
 import { API_BASE, apiFetch } from './apiBase'
 import ChatMessageContent from './ChatMessageContent'
+import { AppTitle, localizeLog, useI18n } from './i18n'
 
 type SourceDocument = { id: number; file_name: string; url: string }
 type RetrievedChunk = {
@@ -47,8 +50,12 @@ type ChatMessage = { role: 'assistant' | 'user'; content: string; timestamp?: st
 type LLMModel = { id: string; provider: string; label: string; tags?: string[]; isManagement?: boolean }
 type SelectedKb = { id: number | 'all'; display_name: string; isSpecial?: boolean }
 
+const GREETING_EN = 'Hello, I am the AI assistant. How can I help?'
+const GREETING_ZH = '你好，我是 AI 助手，有什么可以帮你？'
+
 function App() {
   const navigate = useNavigate()
+  const { t, lang } = useI18n()
   const [kb, setKb] = useState(() => localStorage.getItem('xenera.kb') || '请选择知识库')
   const [llm, setLlm] = useState(() => localStorage.getItem('xenera.llm') || '请选择LLM')
   const [chunk, setChunk] = useState(() => localStorage.getItem('xenera.chunk') || '检索分块数量')
@@ -69,13 +76,20 @@ function App() {
   const RETURN_ORIGINAL_KEY = 'xenera.returnOriginal'
   const OPEN_ORIGINAL_KEY = 'xenera.openOriginal'
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: '你好，我是 AI 助手，有什么可以帮你？', timestamp: new Date().toLocaleString() },
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
+    {
+      role: 'assistant',
+      content: localStorage.getItem('ui.language') === 'zh' ? GREETING_ZH : GREETING_EN,
+      timestamp: new Date().toLocaleString(),
+    },
   ])
   const [compose, setCompose] = useState('')
 
   const [logs, setLogs] = useState<string[]>([])
   const [retrievedChunks, setRetrievedChunks] = useState<RetrievedChunk[]>([])
+  const [sending, setSending] = useState(false)
+  const [waitStep, setWaitStep] = useState(0)
+  const waitKeys = ['thinkingSearch', 'thinkingRead', 'thinkingWrite'] as const
 
   const parseLogsWithChunks = (rawLogs: string[] | string) => {
     const lines = Array.isArray(rawLogs) ? rawLogs : String(rawLogs || '').split('\n')
@@ -94,6 +108,15 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    setMessages(prev => {
+      if (prev.length === 1 && (prev[0].content === GREETING_EN || prev[0].content === GREETING_ZH)) {
+        return [{ ...prev[0], content: t('greeting') }]
+      }
+      return prev
+    })
+  }, [lang])
+
   const chunkByIndex = (index: number) =>
     retrievedChunks.find(c => c.index === index)
 
@@ -104,7 +127,7 @@ function App() {
     }
     const idx = Number(m[1])
     const chunk = chunkByIndex(idx)
-    const label = line.trim()
+    const label = localizeLog(line.trim(), lang)
     return (
       <Tooltip
         key={key}
@@ -114,11 +137,11 @@ function App() {
         title={
           <Box sx={{ maxWidth: 420, maxHeight: 360, overflow: 'auto', p: 0.5 }}>
             <Typography variant="caption" sx={{ fontWeight: 600, display: 'block', mb: 0.75 }}>
-              分块 {idx}
-              {chunk?.similarity_score != null ? ` · 相似度 ${Number(chunk.similarity_score).toFixed(3)}` : ''}
+              {t('chunkTooltip', { index: idx })}
+              {chunk?.similarity_score != null ? ` · ${t('similarity', { score: Number(chunk.similarity_score).toFixed(3) })}` : ''}
             </Typography>
             <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-              {chunk?.content?.trim() || '（无完整分块内容）'}
+              {chunk?.content?.trim() || t('noChunkBody')}
             </Typography>
           </Box>
         }
@@ -145,22 +168,22 @@ function App() {
   }
 
   const renderLogs = useMemo(() => {
-    const label = 'RAG提示词内容:'
-    return logs.map((t, i) => {
+    const label = lang === 'en' ? 'RAG prompt:' : 'RAG提示词内容:'
+    return logs.map((raw, i) => {
+      const t = localizeLog(raw, lang)
       // 如果是分块汇总日志（多行，且每行以"- 分块"开头），不要在前面添加序号，并逐行渲染
-      if (t.includes('\n') && t.split('\n').every(line => line.trim().startsWith('- 分块'))) {
-        const lines = t.split('\n')
+      if (raw.includes('\n') && raw.split('\n').every(line => line.trim().startsWith('- 分块'))) {
+        const lines = raw.split('\n')
         return (
           <div key={i} style={{ marginBottom: 6, lineHeight: 1.6 }}>
             {lines.map((line, idx) => renderChunkLogLine(line, `${i}-${idx}`))}
           </div>
         )
       }
-      // History may split the multi-line chunk block into single lines
-      if (t.trim().startsWith('- 分块')) {
+      if (raw.trim().startsWith('- 分块')) {
         return (
           <div key={i} style={{ marginBottom: 6, lineHeight: 1.6 }}>
-            {renderChunkLogLine(t, i)}
+            {renderChunkLogLine(raw, i)}
           </div>
         )
       }
@@ -183,7 +206,7 @@ function App() {
         </div>
       )
     })
-  }, [logs, retrievedChunks])
+  }, [logs, retrievedChunks, lang])
   
   // Refs for auto-scrolling
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -213,6 +236,17 @@ function App() {
     }
   }
   
+  useEffect(() => {
+    if (!sending) {
+      setWaitStep(0)
+      return
+    }
+    const timer = window.setInterval(() => {
+      setWaitStep((step) => (step + 1) % waitKeys.length)
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [sending])
+
   // Auto-scroll when messages change
   useEffect(() => {
     // Small delay to ensure DOM is updated
@@ -220,7 +254,7 @@ function App() {
       scrollToBottomMessages()
     }, 100)
     return () => clearTimeout(timer)
-  }, [messages])
+  }, [messages, sending, waitStep])
   
   // Auto-scroll when logs change
   useEffect(() => {
@@ -259,8 +293,8 @@ function App() {
         const hasModels = groupedModels.length > 0
         const managementOption = {
           id: 'manage-llm',
-          provider: hasModels ? '' : 'No LLM Models Configured',
-          label: '管理 LLM',
+          provider: hasModels ? '' : t('noLlmConfigured'),
+          label: t('manageLlm'),
           tags: ['MANAGEMENT'],
           isManagement: true
         }
@@ -295,7 +329,7 @@ function App() {
       }
     }
     loadLlmModels()
-  }, [llm])
+  }, [llm, lang])
 
   useEffect(() => {
     const loadKnowledgeBases = async () => {
@@ -347,12 +381,13 @@ function App() {
   useEffect(() => { localStorage.setItem(RETURN_ORIGINAL_KEY, returnOriginal ? '1' : '0') }, [returnOriginal])
   useEffect(() => { localStorage.setItem(OPEN_ORIGINAL_KEY, openOriginal ? '1' : '0') }, [openOriginal])
 
-  const resolveSourceUrl = (url: string) => {
-    if (/^https?:\/\//i.test(url)) return url
-    return `${API_BASE}${url.startsWith('/') ? url : `/${url}`}`
+  const sourceDownloadHref = (src: SourceDocument) => {
+    const fileUrl = `/api/kb/documents/${src.id}/file/${encodeURIComponent(src.file_name)}?download=1`
+    return `${API_BASE}${fileUrl}`
   }
 
   const onSend = async () => {
+    if (sending) return
     setIsHistoryView(false)
     const text = compose.trim()
     if (!text) return
@@ -367,18 +402,17 @@ function App() {
         ...prev,
         `执行逻辑（${now}）：`,
         `用户选择了知识库：${selectedKb?.display_name || '未选择'}`,
-        `用户选择了LLM：${selectedLlm?.label || '未选择'}`,
+        `用户选择了LLM：未选择`,
         `检索分块数量：${chunk}`,
         `返回原文档：${returnOriginal ? '是' : '否'}`,
         `打开原文档：${openOriginal ? '是' : '否'}`,
         `用户问题：${text}`,
       ])
 
-      // Show error message from assistant
       setTimeout(() => {
         setMessages(prev => [
           ...prev,
-          { role: 'assistant', content: '请选择LLM', timestamp: new Date().toLocaleString() },
+          { role: 'assistant', content: t('selectLlmPrompt'), timestamp: new Date().toLocaleString() },
         ])
         setLogs(prev => [...prev, '机器人提示：请选择LLM'])
       }, 300)
@@ -407,6 +441,7 @@ function App() {
       `用户问题：${text}`,
     ])
     setRetrievedChunks([])
+    setSending(true)
 
     try {
       // Prepare request data
@@ -433,7 +468,7 @@ function App() {
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'API调用失败')
+        throw new Error(errorData.error || t('unknownError'))
       }
 
       const data = await response.json()
@@ -462,7 +497,7 @@ function App() {
       console.error('Chat API error:', error)
       
       // Show error message with better formatting
-      const errorMessage = error.message || '未知错误'
+      const errorMessage = error instanceof Error ? error.message : t('unknownError')
       setMessages(prev => [
         ...prev,
         { role: 'assistant', content: `❌ ${errorMessage}`, timestamp: new Date().toLocaleString() }
@@ -472,6 +507,8 @@ function App() {
         ...prev,
         `❌ API调用失败：${errorMessage}`
       ])
+    } finally {
+      setSending(false)
     }
   }
 
@@ -479,9 +516,7 @@ function App() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 2 }}>
-      <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-        RAG Tool
-      </Typography>
+      <AppTitle />
       
       {/* Backend Connection Status Alert */}
       {backendConnected === false && (
@@ -495,24 +530,23 @@ function App() {
               size="small" 
               onClick={checkBackendConnection}
             >
-              重试连接
+              {t('retryConnection')}
             </Button>
           }
         >
-          <AlertTitle>后端服务连接失败</AlertTitle>
-          无法连接到后端服务 ({API_BASE || (typeof window !== 'undefined' ? window.location.origin : '')})
-          。请确保后端可访问，并检查 ALLOWED_HOSTS / VITE_API_BASE。
+          <AlertTitle>{t('backendFailedTitle')}</AlertTitle>
+          {t('backendFailedBody', { url: API_BASE || (typeof window !== 'undefined' ? window.location.origin : '') })}
           <br />
           <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>
-            Docker: set ALLOWED_HOSTS=* or your server IP, rebuild frontend with empty VITE_API_BASE (nginx /api proxy).
+            {t('backendFailedHint')}
           </Typography>
         </Alert>
       )}
       
       {backendConnected === null && (
         <Alert severity="info" sx={{ mb: 3 }}>
-          <AlertTitle>正在连接后端服务...</AlertTitle>
-          正在检查后端服务连接状态，请稍候。
+          <AlertTitle>{t('backendConnectingTitle')}</AlertTitle>
+          {t('backendConnectingBody')}
         </Alert>
       )}
       
@@ -522,10 +556,10 @@ function App() {
           value={selectedKb?.id === 'all' ? 'all-kb' : (selectedKb?.id ?? '')} 
           displayEmpty
           renderValue={(selected) => {
-            if (selected === '' || selected === undefined || selected === null) return '请选择知识库'
-            if (selected === 'all-kb') return '整个知识库'
+            if (selected === '' || selected === undefined || selected === null) return t('selectKb')
+            if (selected === 'all-kb') return t('allKb')
             const kbItem = knowledgeBases.find(k => k.id === selected)
-            return kbItem?.display_name || '请选择知识库'
+            return kbItem?.display_name || t('selectKb')
           }}
           onChange={(e: SelectChangeEvent) => {
             const v = e.target.value
@@ -546,7 +580,7 @@ function App() {
           }} 
           sx={selectSx}
         >
-          <MenuItem value="">请选择知识库</MenuItem>
+          <MenuItem value="">{t('selectKb')}</MenuItem>
           {knowledgeBases.map(kbItem => (
             <MenuItem key={kbItem.id} value={kbItem.id}>
               {kbItem.display_name}
@@ -555,13 +589,13 @@ function App() {
           <MenuItem value="all-kb">
             <Stack direction="row" spacing={1} alignItems="center">
               <LibraryBooks fontSize="small" sx={{ color: 'primary.main' }} />
-              <Typography color="primary.main">整个知识库</Typography>
+              <Typography color="primary.main">{t('allKb')}</Typography>
             </Stack>
           </MenuItem>
           <MenuItem value="manage-kb">
             <Stack direction="row" spacing={1} alignItems="center">
               <Settings fontSize="small" sx={{ color: 'primary.main' }} />
-              <Typography color="primary.main">管理知识库</Typography>
+              <Typography color="primary.main">{t('manageKb')}</Typography>
               <Typography variant="caption" color="primary.main">
                 →
               </Typography>
@@ -586,7 +620,7 @@ function App() {
           renderInput={(params) => (
             <TextField 
               {...params} 
-              placeholder="请选择LLM" 
+              placeholder={t('selectLlm')} 
               size="small"
             />
           )}
@@ -620,7 +654,7 @@ function App() {
                     </Stack>
                     {isProblematic && (
                       <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: 'block' }}>
-                        ⚠️ 此模型可能不存在于API中
+                        {t('modelMissing')}
                       </Typography>
                     )}
                   </Paper>
@@ -630,7 +664,7 @@ function App() {
           }}
         />
         <Select size="small" value={chunk} onChange={(e: SelectChangeEvent) => setChunk(e.target.value)} sx={selectSx}>
-          <MenuItem value="检索分块数量">检索分块数量</MenuItem>
+          <MenuItem value="检索分块数量">{t('chunkCount')}</MenuItem>
           <MenuItem value="2">2</MenuItem>
           <MenuItem value="3">3</MenuItem>
           <MenuItem value="4">4</MenuItem>
@@ -649,7 +683,7 @@ function App() {
               onChange={(_, checked) => setReturnOriginal(checked)}
             />
           }
-          label="返回原文档"
+          label={t('returnOriginal')}
         />
         <FormControlLabel
           sx={{ mr: 0, flexShrink: 0 }}
@@ -660,14 +694,15 @@ function App() {
               onChange={(_, checked) => setOpenOriginal(checked)}
             />
           }
-          label="打开原文档"
+          label={t('openOriginal')}
         />
       </Stack>
 
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
         <Box sx={{ width: { xs: '100%', md: '66.666%' } }}>
           <Paper variant="outlined" sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2, height: '100%' }}>
-            <Typography variant="subtitle2">聊天</Typography>
+            <Typography variant="subtitle2">{t('chat')}</Typography>
+            {sending && <LinearProgress />}
             <Divider />
             <Box sx={{ flex: 1, minHeight: 360, maxHeight: '60vh', overflow: 'auto', pr: 1 }}>
               <Stack spacing={1}>
@@ -684,7 +719,7 @@ function App() {
                       }}
                     >
                       <Typography variant="caption" sx={{ opacity: 0.8 }}>
-                        {m.role === 'user' ? '用户' : '机器人'}
+                        {m.role === 'user' ? t('user') : t('bot')}
                         {m.timestamp ? ` · ${m.timestamp}` : ''}
                       </Typography>
                       <ChatMessageContent
@@ -696,12 +731,12 @@ function App() {
                       />
                       {m.role === 'assistant' && m.sources && m.sources.length > 0 && (
                         <Stack spacing={0.5} sx={{ mt: 1.25 }}>
-                          <Typography variant="caption" sx={{ fontWeight: 600 }}>原文档：</Typography>
+                          <Typography variant="caption" sx={{ fontWeight: 600 }}>{t('sourceDocuments')}</Typography>
                           {m.sources.map((src) => (
                             <Link
                               key={src.id}
-                              href={resolveSourceUrl(src.url)}
-                              target="_blank"
+                              href={sourceDownloadHref(src)}
+                              download={src.file_name}
                               rel="noopener noreferrer"
                               underline="hover"
                               variant="body2"
@@ -714,6 +749,24 @@ function App() {
                     </Paper>
                   </Box>
                 ))}
+                {sending && (
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+                    <Paper variant="outlined" sx={{ px: 1.5, py: 1.25, maxWidth: '75%' }}>
+                      <Stack direction="row" spacing={1.25} alignItems="flex-start">
+                        <CircularProgress size={18} sx={{ mt: 0.4 }} />
+                        <Box>
+                          <Typography variant="body2" fontWeight={600}>{t('thinkingTitle')}</Typography>
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                            {t(waitKeys[waitStep])}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                            {t('thinkingHint')}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Paper>
+                  </Box>
+                )}
                 {/* Invisible element to scroll to */}
                 <div ref={messagesEndRef} />
               </Stack>
@@ -723,23 +776,23 @@ function App() {
                 fullWidth
                 multiline
                 minRows={2}
-                placeholder="请输入文本"
+                placeholder={t('enterText')}
                 value={compose}
                 onChange={e => setCompose(e.target.value)}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
-                    if (compose.trim()) onSend()
+                    if (compose.trim() && !sending) onSend()
                   }
                 }}
               />
               <Button
                 variant="contained"
                 onClick={onSend}
-                disabled={!compose.trim()}
+                disabled={!compose.trim() || sending}
                 sx={{ minWidth: 88 }}
               >
-                发送
+                {sending ? t('pleaseWait') : t('send')}
               </Button>
             </Stack>
           </Paper>
@@ -748,11 +801,16 @@ function App() {
         <Box sx={{ width: { xs: '100%', md: '33.333%' } }}>
           <Paper variant="outlined" sx={{ p: 2, height: '100%', minHeight: 360, display: 'flex', flexDirection: 'column' }}>
             <Stack direction="row" alignItems="center" justifyContent="space-between">
-              <Typography variant="subtitle1" fontWeight={600}>{isHistoryView ? '执行日志（历史记录）：' : '执行日志：'}</Typography>
-              <Button size="small" variant="outlined" onClick={() => { setHistoryOpen(true); (async () => { try { const res = await fetch(`${API_BASE}/api/agents/histories/?limit=100`); const d = await res.json(); setHistories(d.results || []);} catch {} })() }}>查看历史记录</Button>
+              <Typography variant="subtitle1" fontWeight={600}>{isHistoryView ? t('executionLogHistory') : t('executionLog')}</Typography>
+              <Button size="small" variant="outlined" onClick={() => { setHistoryOpen(true); (async () => { try { const res = await fetch(`${API_BASE}/api/agents/histories/?limit=100`); const d = await res.json(); setHistories(d.results || []);} catch {} })() }}>{t('viewHistory')}</Button>
             </Stack>
+            {sending && (
+              <Alert severity="info" icon={<CircularProgress size={16} />} sx={{ mt: 1 }}>
+                {t(waitKeys[waitStep])} {t('thinkingHint')}
+              </Alert>
+            )}
             <Box sx={{ mt: 1, flex: 1, maxHeight: '60vh', overflowY: 'auto', overflowX: 'hidden', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', fontSize: 13 }}>
-              {logs.length ? renderLogs : '（空）'}
+              {logs.length ? renderLogs : t('empty')}
               {/* Invisible element to scroll to */}
               <div ref={logsEndRef} />
             </Box>
@@ -761,15 +819,15 @@ function App() {
         
         {/* 历史记录弹窗 */}
         <Dialog open={historyOpen} onClose={() => setHistoryOpen(false)} maxWidth="md" fullWidth>
-          <DialogTitle>历史查询记录</DialogTitle>
+          <DialogTitle>{t('historyTitle')}</DialogTitle>
           <DialogContent dividers>
             <List>
               {histories.map(h => (
                 <ListItem key={h.id} disableGutters>
                   <ListItemButton onClick={() => {
                     setMessages([
-                      { role: 'user', content: `${h.question}（历史记录）`, timestamp: h.created_at },
-                      { role: 'assistant', content: `${h.response}（历史记录）`, timestamp: h.created_at },
+                      { role: 'user', content: `${h.question} ${t('historyTag')}`, timestamp: h.created_at },
+                      { role: 'assistant', content: `${h.response} ${t('historyTag')}`, timestamp: h.created_at },
                     ])
                     const parsed = parseLogsWithChunks(h.logs || '')
                     setRetrievedChunks(parsed.chunks)
@@ -783,7 +841,7 @@ function App() {
                 </ListItem>
               ))}
               {histories.length === 0 && (
-                <Typography variant="body2" color="text.secondary">暂无历史记录</Typography>
+                <Typography variant="body2" color="text.secondary">{t('noHistory')}</Typography>
               )}
             </List>
           </DialogContent>

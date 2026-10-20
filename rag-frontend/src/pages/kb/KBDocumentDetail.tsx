@@ -1,4 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom'
+import { AppTitle, useI18n } from '../../i18n'
 import {
   Box,
   Chip,
@@ -18,6 +19,7 @@ import ArrowBack from '@mui/icons-material/ArrowBack'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 
 export default function KBDocumentDetail() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const { state } = useLocation() as { state?: any }
   const fileName: string = state?.file || 'document.pdf'
@@ -35,16 +37,14 @@ export default function KBDocumentDetail() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 2 }}>
-      <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-        RAG Tool
-      </Typography>
+      <AppTitle />
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
         <IconButton onClick={() => navigate('/')}><ArrowBack /></IconButton>
         <InsertDriveFileIcon fontSize="small" />
         <Typography variant="h6" sx={{ mr: 1 }}>{fileName}</Typography>
         <Chip size="small" label="Q&A" variant="outlined" />
         <Box sx={{ flex: 1 }} />
-        <Chip size="small" color="success" label="AVAILABLE" />
+        <Chip size="small" color="success" label={t('available')} />
         <Switch defaultChecked />
       </Stack>
 
@@ -52,21 +52,21 @@ export default function KBDocumentDetail() {
         <Box sx={{ flex: 1 }}>
           <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
             <Select size="small" value={'all'} sx={{ width: 120 }}>
-              <MenuItem value={'all'}>All</MenuItem>
+              <MenuItem value={'all'}>{t('all')}</MenuItem>
             </Select>
-            <TextField size="small" placeholder="Search" sx={{ flex: 1 }} />
+            <TextField size="small" placeholder={t('search')} sx={{ flex: 1 }} />
           </Stack>
 
-          <Typography variant="caption" sx={{ mb: 1, display: 'block' }}>{chunks.length} CHUNKS</Typography>
+          <Typography variant="caption" sx={{ mb: 1, display: 'block' }}>{t('chunksCount', { count: chunks.length })}</Typography>
 
           <Stack spacing={1.5}>
             {chunks.map((c, idx) => (
               <Paper key={idx} variant="outlined" sx={{ p: 1.5 }}>
-                <Typography variant="caption" color="text.secondary">{c.id} · {c.characters} characters · 0 Retrieval count</Typography>
+                <Typography variant="caption" color="text.secondary">{c.id} · {t('charactersValue', { count: c.characters })} · 0 {t('retrievalCountLabel')}</Typography>
                 <Typography sx={{ mt: 1 }}>{c.text}</Typography>
                 <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end" sx={{ mt: 1 }}>
-                  <Button size="small">Edit</Button>
-                  <Button size="small">Delete</Button>
+                  <Button size="small">{t('edit')}</Button>
+                  <Button size="small">{t('delete')}</Button>
                   <Switch defaultChecked />
                 </Stack>
               </Paper>
@@ -76,30 +76,30 @@ export default function KBDocumentDetail() {
 
         <Box sx={{ width: 360 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>Metadata</Typography>
-            <Button size="small" variant="contained">Start Labeling</Button>
+            <Typography variant="subtitle1" sx={{ mb: 1 }}>{t('metadata')}</Typography>
+            <Button size="small" variant="contained">{t('startLabeling')}</Button>
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
-            <Typography variant="subtitle1">Document information</Typography>
+            <Typography variant="subtitle1">{t('documentInfo')}</Typography>
             <Divider sx={{ my: 1 }} />
-            <InfoRow label="Original filename" value={fileName} />
-            <InfoRow label="Original file size" value="38.49 KB" />
-            <InfoRow label="Upload date" value={new Date().toLocaleString()} />
-            <InfoRow label="Last update date" value={new Date().toLocaleString()} />
-            <InfoRow label="Source" value="Upload File" />
+            <InfoRow label={t('originalFilename')} value={fileName} />
+            <InfoRow label={t('originalFileSize')} value="38.49 KB" />
+            <InfoRow label={t('uploadDate')} value={new Date().toLocaleString()} />
+            <InfoRow label={t('lastUpdate')} value={new Date().toLocaleString()} />
+            <InfoRow label={t('source')} value={t('sourceUpload')} />
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
-            <Typography variant="subtitle1">Technical parameters</Typography>
+            <Typography variant="subtitle1">{t('technicalParams')}</Typography>
             <Divider sx={{ my: 1 }} />
-            <InfoRow label="Chunks specification" value="General" />
-            <InfoRow label="Chunks length" value="1,024" />
-            <InfoRow label="Avg. paragraph length" value="535 characters" />
-            <InfoRow label="Paragraphs" value={`${chunks.length} paragraphs`} />
-            <InfoRow label="Retrieval count" value={`0.00% (0/${chunks.length})`} />
-            <InfoRow label="Embedding time" value="4.95 sec" />
-            <InfoRow label="Embedded spend" value="1,473 tokens" />
+            <InfoRow label={t('chunksSpec')} value={t('general')} />
+            <InfoRow label={t('chunksLength')} value="1,024" />
+            <InfoRow label={t('avgParagraph')} value={t('charactersValue', { count: 535 })} />
+            <InfoRow label={t('paragraphs')} value={t('paragraphsValue', { count: chunks.length })} />
+            <InfoRow label={t('retrievalCountLabel')} value={`0.00% (0/${chunks.length})`} />
+            <InfoRow label={t('embeddingTime')} value="4.95 sec" />
+            <InfoRow label={t('embeddedSpend')} value="1,473 tokens" />
           </Paper>
         </Box>
       </Stack>

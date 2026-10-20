@@ -25,8 +25,10 @@ import Autocomplete from '@mui/material/Autocomplete'
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { AppTitle, modeLabel, useI18n } from '../../i18n'
 
 export default function KBChunkSettings() {
+  const { t, lang } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const { kbId } = useParams<{ kbId: string }>()
@@ -78,6 +80,10 @@ export default function KBChunkSettings() {
   const [generalExpanded, setGeneralExpanded] = useState(true)
   const [qaExpanded, setQaExpanded] = useState(false)
   const [tocExpanded, setTocExpanded] = useState(false)
+  const [tocLevel, setTocLevel] = useState(() => {
+    const saved = Number(localStorage.getItem('kb.tocLevel'))
+    return saved >= 1 && saved <= 6 ? saved : 3
+  })
 
   // Fetch documents for the knowledge base
   const fetchDocuments = async () => {
@@ -159,6 +165,8 @@ export default function KBChunkSettings() {
           setQaFormat(false)
           setReplaceSpaces(data.replace_spaces ?? true)
           setDeleteUrls(data.delete_urls || false)
+          const level = Number(data.toc_level)
+          setTocLevel(level >= 1 && level <= 6 ? level : 3)
         }
       }
     } catch (error) {
@@ -193,7 +201,7 @@ export default function KBChunkSettings() {
   
   // Show error message for archived documents
   const showArchivedError = () => {
-    setSnackbarMessage('Document is not available')
+    setSnackbarMessage(t('documentUnavailable'))
     setSnackbarOpen(true)
   }
 
@@ -222,13 +230,13 @@ export default function KBChunkSettings() {
     
     // Check if files are available
     if (!files || files.length === 0) {
-      setValidationError('Please upload documents first to continue processing')
+      setValidationError(t('uploadFirst'))
       return false
     }
     
     // Check if embedding model is selected
     if (!embedding) {
-      setValidationError('Please select an embedding model to continue processing')
+      setValidationError(t('selectEmbeddingFirst'))
       return false
     }
     
@@ -286,12 +294,12 @@ export default function KBChunkSettings() {
     if (isFromDocuments) {
       // From Documents page - process selected document
       if (!embedding) {
-        setValidationError('Please select an embedding model')
+        setValidationError(t('selectEmbeddingFirst'))
         return
       }
       
       if (!selectedDocument) {
-        setValidationError('Please select a document to process')
+        setValidationError(t('selectDocumentFirst'))
         return
       }
       
@@ -363,11 +371,11 @@ export default function KBChunkSettings() {
         setValidationError('')
         
         // Show success message
-        alert('Chunks saved and vectorized successfully!')
+        alert(t('chunksSaved'))
         
       } catch (error) {
         console.error('Error saving chunks:', error)
-        setValidationError(`Failed to save chunks: ${error.message}`)
+        setValidationError(t('saveChunksFailed', { message: error.message }))
       }
     } else {
       // From normal flow - navigate to processing page
@@ -409,6 +417,7 @@ export default function KBChunkSettings() {
         deleteUrls,
         qaFormat: qaExpanded,
         tocFormat: tocExpanded,
+        tocLevel,
         chunkType,
         qaLanguage,
         questionFlag,
@@ -439,8 +448,8 @@ export default function KBChunkSettings() {
         const managementOption = {
           id: 'manage-llm',
           // Only show the group header "No Embedding Models Configured" when there are no models
-          provider: hasModels ? '' : 'No Embedding Models Configured',
-          label: 'Manage LLM',
+          provider: hasModels ? '' : t('noEmbedding'),
+          label: t('manageLlm'),
           tags: ['MANAGEMENT'],
           isManagement: true
         }
@@ -460,7 +469,7 @@ export default function KBChunkSettings() {
       }
     }
     loadEmbeddingModels()
-  }, [])
+  }, [lang])
 
   // Load rerank models from backend (grouped by provider, same UX as Embedding Model)
   useEffect(() => {
@@ -479,8 +488,8 @@ export default function KBChunkSettings() {
         const hasModels = groupedModels.length > 0
         const managementOption: RerankModel = {
           id: 'manage-llm-rerank',
-          provider: hasModels ? '' : 'No Rerank Models Configured',
-          label: 'Manage LLM',
+          provider: hasModels ? '' : t('noRerank'),
+          label: t('manageLlm'),
           tags: ['MANAGEMENT'],
           isManagement: true,
         }
@@ -502,7 +511,7 @@ export default function KBChunkSettings() {
       }
     }
     loadRerankModels()
-  }, [])
+  }, [lang])
 
   // Persist settings to localStorage
   useEffect(() => { 
@@ -537,6 +546,7 @@ export default function KBChunkSettings() {
   useEffect(() => { localStorage.setItem('kb.questionFlag', questionFlag) }, [questionFlag])
   useEffect(() => { localStorage.setItem('kb.answerFlag', answerFlag) }, [answerFlag])
   useEffect(() => { localStorage.setItem('kb.qaMaxLength', qaMaxLength) }, [qaMaxLength])
+  useEffect(() => { localStorage.setItem('kb.tocLevel', String(tocLevel)) }, [tocLevel])
 
   // Chunk management functions
   const handlePreviewChunk = async () => {
@@ -552,6 +562,7 @@ export default function KBChunkSettings() {
           overlap: 0,
           replace_spaces: replaceSpaces,
           delete_urls: deleteUrls,
+          toc_level: tocLevel,
         }
       } else if (qaExpanded) {
         // Using Q&A mode settings
@@ -914,17 +925,15 @@ export default function KBChunkSettings() {
   return (
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
       <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
-        <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-          RAG Tool
-        </Typography>
+        <AppTitle />
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-        <Typography variant="h6">Chunk Settings</Typography>
+        <Typography variant="h6">{t('chunkSettings')}</Typography>
         <Button 
           variant="outlined" 
           onClick={() => navigate(kbId ? `/manage/kb/documents/${kbId}` : '/manage/kb')} 
           startIcon={<ArrowBackIcon />}
         >
-          {kbId ? '返回文档管理' : '返回管理知识库'}
+          {kbId ? t('backToDocuments') : t('backToKb')}
         </Button>
       </Stack>
       <Stack direction="row" spacing={2}>
@@ -965,14 +974,14 @@ export default function KBChunkSettings() {
                   <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: 'primary.light', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Typography variant="caption" sx={{ color: 'primary.contrastText' }}>⚙</Typography>
                   </Box>
-                  <Typography variant="subtitle2" fontWeight={600}>General</Typography>
+                  <Typography variant="subtitle2" fontWeight={600}>{t('general')}</Typography>
                 </Stack>
                 <Typography variant="body2" color="text.secondary">
-                  General text chunking mode, the chunks retrieved and recalled are the same.
+                  {t('generalDesc')}
                 </Typography>
                 {isFromDocuments && dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general' && (
                   <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: 'block' }}>
-                    * This setting cannot be modified when chunk type is {dbChunkSettings.chunk_type}
+                    {t('chunkTypeLocked', { type: modeLabel(dbChunkSettings.chunk_type, t) })}
                   </Typography>
                 )}
               </Box>
@@ -981,58 +990,58 @@ export default function KBChunkSettings() {
                 <Stack spacing={2} sx={{ mt: 2 }}>
                   <Stack direction="row" spacing={2}>
                     <TextField 
-                      label="Delimiter" 
+                      label={t('delimiter')} 
                       value={delimiter} 
                       onChange={e => setDelimiter(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
-                      placeholder="Enter delimiter (e.g., \n\n for double newlines)"
+                      placeholder={t('delimiterPlaceholder')}
                       disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'}
                       InputProps={{
-                        endAdornment: <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>characters</Typography>
+                        endAdornment: <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>{t('characters')}</Typography>
                       }}
                     />
                     <TextField 
-                      label="Maximum chunk length" 
+                      label={t('maxChunkLength')} 
                       value={maxLen} 
                       onChange={e => setMaxLen(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
                       disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'}
                       InputProps={{ 
-                        endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span>
+                        endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>{t('characters')}</span>
                       }} 
                     />
                     <TextField 
-                      label="Chunk overlap" 
+                      label={t('chunkOverlap')} 
                       value={overlap} 
                       onChange={e => setOverlap(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
                       disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'}
                       InputProps={{ 
-                        endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>number</span>
+                        endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>{t('numberUnit')}</span>
                       }} 
                     />
                   </Stack>
                   
                   <Box>
-                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Text Pre-processing Rules</Typography>
+                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>{t('textPreprocess')}</Typography>
                     <Stack spacing={1}>
                       <FormControlLabel 
                         control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'} />} 
-                        label="Replace consecutive spaces, newlines and tabs" 
+                        label={t('replaceSpaces')} 
                       />
                       <FormControlLabel 
                         control={<Switch checked={deleteUrls} onChange={(_, v) => setDeleteUrls(v)} disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'general'} />} 
-                        label="Delete all URLs and email addresses" 
+                        label={t('deleteUrls')} 
                       />
                     </Stack>
                   </Box>
                   
                   <Stack direction="row" spacing={1}>
-                    <Button variant="outlined" startIcon={<Typography>🔍</Typography>} onClick={handlePreviewChunk}>Preview Chunk</Button>
-                    <Button onClick={handleGeneralReset}>Reset</Button>
+                    <Button variant="outlined" startIcon={<Typography>🔍</Typography>} onClick={handlePreviewChunk}>{t('previewChunk')}</Button>
+                    <Button onClick={handleGeneralReset}>{t('reset')}</Button>
                   </Stack>
                 </Stack>
               )}
@@ -1072,14 +1081,14 @@ export default function KBChunkSettings() {
                   <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: 'warning.light', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Typography variant="caption" sx={{ color: 'warning.contrastText' }}>👥</Typography>
                   </Box>
-                  <Typography variant="subtitle2" fontWeight={600}>Using Q&A</Typography>
+                  <Typography variant="subtitle2" fontWeight={600}>{t('usingQa')}</Typography>
                 </Stack>
                 <Typography variant="body2" color="text.secondary">
-                  When using the Q&A mode, the Question is used for embedding and retrieval.
+                  {t('usingQaDesc')}
                 </Typography>
                 {isFromDocuments && dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa' && (
                   <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: 'block' }}>
-                    * This setting cannot be modified when chunk type is {dbChunkSettings.chunk_type}
+                    {t('chunkTypeLocked', { type: modeLabel(dbChunkSettings.chunk_type, t) })}
                   </Typography>
                 )}
               </Box>
@@ -1088,51 +1097,51 @@ export default function KBChunkSettings() {
                 <Stack spacing={2} sx={{ mt: 2 }}>
                   <Stack direction="row" spacing={2}>
                     <TextField 
-                      label="Question flag" 
+                      label={t('questionFlag')} 
                       value={questionFlag} 
                       onChange={e => setQuestionFlag(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
                       disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'}
                       InputProps={{
-                        endAdornment: <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>characters</Typography>
+                        endAdornment: <Typography variant="caption" sx={{ color: 'text.secondary', ml: 1 }}>{t('characters')}</Typography>
                       }}
                     />
                     <TextField 
-                      label="Answer flag" 
+                      label={t('answerFlag')} 
                       value={answerFlag} 
                       onChange={e => setAnswerFlag(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
                       disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'}
                       InputProps={{ 
-                        endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>characters</span>
+                        endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>{t('characters')}</span>
                       }} 
                     />
                     <TextField 
-                      label="Maximum chunk length" 
+                      label={t('maxChunkLength')} 
                       value={qaMaxLength} 
                       onChange={e => setQaMaxLength(e.target.value)} 
                       size="small" 
                       sx={{ width: 240 }} 
                       disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'}
                       InputProps={{ 
-                        endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>number</span>
+                        endAdornment: <span style={{ marginLeft: 8, fontSize: 12, color: '#888' }}>{t('numberUnit')}</span>
                       }} 
                     />
                   </Stack>
                   
                   <Box>
-                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Text Pre-processing Rules</Typography>
+                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>{t('textPreprocess')}</Typography>
                     <Stack spacing={1}>
                       <FormControlLabel 
                         control={<Switch checked={replaceSpaces} onChange={(_, v) => setReplaceSpaces(v)} disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'} />} 
-                        label="Replace consecutive spaces, newlines and tabs" 
+                        label={t('replaceSpaces')} 
                       />
                       <Stack direction="row" spacing={1} alignItems="center">
                         <FormControlLabel 
                           control={<Switch checked={qaFormat} onChange={(_, v) => setQaFormat(v)} disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'qa'} />} 
-                          label="Chunk using Q&A format in" 
+                          label={t('qaFormatIn')} 
                         />
                         <Select 
                           size="small" 
@@ -1141,8 +1150,8 @@ export default function KBChunkSettings() {
                           disabled={!qaFormat || (isFromDocuments && dbChunkSettings?.chunk_type === 'general')}
                           sx={{ minWidth: 100 }}
                         >
-                          <MenuItem value="English">English</MenuItem>
-                          <MenuItem value="Chinese">Chinese</MenuItem>
+                          <MenuItem value="English">{t('english')}</MenuItem>
+                          <MenuItem value="Chinese">{t('chinese')}</MenuItem>
                         </Select>
                         <Typography variant="caption" sx={{ color: 'text.secondary' }}>?</Typography>
                       </Stack>
@@ -1150,14 +1159,14 @@ export default function KBChunkSettings() {
                   </Box>
                   
                   <Stack direction="row" spacing={1}>
-                    <Button variant="outlined" startIcon={<Typography>🔍</Typography>} onClick={handlePreviewChunk}>Preview Chunk</Button>
-                    <Button onClick={handleQaReset}>Reset</Button>
+                    <Button variant="outlined" startIcon={<Typography>🔍</Typography>} onClick={handlePreviewChunk}>{t('previewChunk')}</Button>
+                    <Button onClick={handleQaReset}>{t('reset')}</Button>
                   </Stack>
                 </Stack>
               )}
             </Paper>
 
-            {/* 按目录结构 */}
+            {/* Directory structure */}
             <Paper
               variant="outlined"
               onClick={!tocExpanded && (!isFromDocuments || !dbChunkSettings?.chunk_type || dbChunkSettings?.chunk_type === 'toc') ? toggleToc : undefined}
@@ -1191,22 +1200,36 @@ export default function KBChunkSettings() {
                   <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: 'success.light', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Typography variant="caption" sx={{ color: 'success.contrastText' }}>📑</Typography>
                   </Box>
-                  <Typography variant="subtitle2" fontWeight={600}>按目录结构</Typography>
+                  <Typography variant="subtitle2" fontWeight={600}>{t('directoryStructure')}</Typography>
                 </Stack>
                 <Typography variant="body2" color="text.secondary">
-                  按文档最小子目录（如 5.1、8.5）分块；子目录名称用于向量嵌入与检索（类似 Q&A 用问题检索）。
+                  {t('directoryDesc')}
                 </Typography>
                 {isFromDocuments && dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'toc' && (
                   <Typography variant="caption" color="warning.main" sx={{ mt: 1, display: 'block' }}>
-                    * This setting cannot be modified when chunk type is {dbChunkSettings.chunk_type}
+                    {t('chunkTypeLocked', { type: modeLabel(dbChunkSettings.chunk_type, t) })}
                   </Typography>
                 )}
               </Box>
 
               {tocExpanded && (
                 <Stack spacing={2} sx={{ mt: 2 }}>
+                  <Stack direction="row" spacing={2} alignItems="center">
+                    <Typography variant="body2" sx={{ minWidth: 140 }}>{t('directoryLevel')}</Typography>
+                    <Select
+                      size="small"
+                      value={tocLevel}
+                      onChange={(e) => setTocLevel(Number(e.target.value))}
+                      disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'toc'}
+                      sx={{ minWidth: 160 }}
+                    >
+                      {[1, 2, 3, 4, 5, 6].map((level) => (
+                        <MenuItem key={level} value={level}>{t('levelN', { level })}</MenuItem>
+                      ))}
+                    </Select>
+                  </Stack>
                   <Box>
-                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Text Pre-processing Rules</Typography>
+                    <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>{t('textPreprocess')}</Typography>
                     <Stack spacing={1}>
                       <FormControlLabel
                         control={
@@ -1216,7 +1239,7 @@ export default function KBChunkSettings() {
                             disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'toc'}
                           />
                         }
-                        label="Replace consecutive spaces, newlines and tabs"
+                        label={t('replaceSpaces')}
                       />
                       <FormControlLabel
                         control={
@@ -1226,15 +1249,15 @@ export default function KBChunkSettings() {
                             disabled={isFromDocuments && !!dbChunkSettings?.chunk_type && dbChunkSettings.chunk_type !== 'toc'}
                           />
                         }
-                        label="Delete all URLs and email addresses"
+                        label={t('deleteUrls')}
                       />
                     </Stack>
                   </Box>
                   <Typography variant="caption" color="text.secondary">
-                    系统会识别形如「1 范围」「3.1 一般规定」「8.5 …」的编号目录，仅对最深层子目录各生成一个分块。
+                    {t('directoryHint')}
                   </Typography>
                   <Stack direction="row" spacing={1}>
-                    <Button variant="outlined" startIcon={<Typography>🔍</Typography>} onClick={handlePreviewChunk}>Preview Chunk</Button>
+                    <Button variant="outlined" startIcon={<Typography>🔍</Typography>} onClick={handlePreviewChunk}>{t('previewChunk')}</Button>
                   </Stack>
                 </Stack>
               )}
@@ -1242,23 +1265,23 @@ export default function KBChunkSettings() {
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, mb: 2, ...(isFromDocuments && { bgcolor: 'grey.50', opacity: 0.7 }) }}>
-            <Typography variant="subtitle1" fontWeight={600}>Index Method</Typography>
+            <Typography variant="subtitle1" fontWeight={600}>{t('indexMethod')}</Typography>
             <Divider sx={{ my: 1 }} />
             <RadioGroup row value={indexMethod} onChange={isFromDocuments ? undefined : (_, v) => setIndexMethod(v as any)}>
-              <FormControlLabel value="hq" control={<Radio disabled={isFromDocuments} />} label="High Quality" />
-              <FormControlLabel value="eco" control={<Radio disabled={isFromDocuments} />} label="Economical" />
+              <FormControlLabel value="hq" control={<Radio disabled={isFromDocuments} />} label={t('highQuality')} />
+              <FormControlLabel value="eco" control={<Radio disabled={isFromDocuments} />} label={t('economical')} />
             </RadioGroup>
-            <Typography variant="caption" color="text.secondary">Once finishing embedding in High Quality mode, reverting to Economical mode is not available.</Typography>
+            <Typography variant="caption" color="text.secondary">{t('hqUnavailable')}</Typography>
             {isFromDocuments && (
               <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 1 }}>
-                * This setting cannot be modified from the Documents page. Please go to Knowledge settings to change.
+                {t('docsPageLocked')}
               </Typography>
             )}
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, mb: 2, ...(isFromDocuments && { bgcolor: 'grey.50', opacity: 0.7 }) }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-              <Typography variant="subtitle1" fontWeight={600}>Embedding Model</Typography>
+              <Typography variant="subtitle1" fontWeight={600}>{t('embeddingModel')}</Typography>
               <Typography variant="caption" color="error.main" sx={{ fontWeight: 600 }}>*</Typography>
             </Stack>
             <Divider sx={{ my: 1 }} />
@@ -1278,7 +1301,7 @@ export default function KBChunkSettings() {
                 }
               }}
               onHighlightChange={(_, v) => setHighlighted(v)}
-              renderInput={(params) => <TextField {...params} size="small" placeholder="Please select an embedding model" />}
+              renderInput={(params) => <TextField {...params} size="small" placeholder={t('selectEmbedding')} />}
               renderOption={(props, option) => (
                 <li {...props} key={option.id} style={{ position: 'relative' }}>
                   <Stack direction="row" spacing={1} alignItems="center">
@@ -1304,23 +1327,23 @@ export default function KBChunkSettings() {
             />
             {isFromDocuments && (
               <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 1 }}>
-                * This setting cannot be modified from the Documents page. Please go to Knowledge settings to change.
+                {t('docsPageLocked')}
               </Typography>
             )}
           </Paper>
 
           <Paper variant="outlined" sx={{ p: 2, mb: 2, ...(isFromDocuments && { bgcolor: 'grey.50', opacity: 0.7 }) }}>
-            <Typography variant="subtitle1" fontWeight={600}>Retrieval Setting</Typography>
+            <Typography variant="subtitle1" fontWeight={600}>{t('retrievalSetting')}</Typography>
             <Divider sx={{ my: 1 }} />
 
             {/* Vector Search */}
             <Paper onClick={isFromDocuments ? () => {} : () => setRetrievalMode('vector')} variant="outlined" sx={{ p: 2, mb: 1.5, borderColor: retrievalMode === 'vector' ? 'primary.main' : 'divider', cursor: isFromDocuments ? 'not-allowed' : 'pointer', ...(isFromDocuments && { opacity: 0.7 }) }}>
-              <Typography fontWeight={600}>Vector Search</Typography>
-              <Typography variant="body2" color="text.secondary">Generate query embeddings and search for the text chunk most similar to its vector representation.</Typography>
+              <Typography fontWeight={600}>{t('vectorSearch')}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('vectorSearchDesc')}</Typography>
               {retrievalMode === 'vector' && (
                 <Box sx={{ mt: 2 }}>
                   <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
-                    <FormControlLabel control={<Switch checked={rerankEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
+                    <FormControlLabel control={<Switch checked={rerankEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setRerankEnabled(v)} />} label={t('rerankModel')} />
                     <Autocomplete
                       sx={{ width: 360 }}
                       options={rerankOptions}
@@ -1337,7 +1360,7 @@ export default function KBChunkSettings() {
                         }
                       }}
                       onHighlightChange={(_, v) => setHighlightedRerank(v)}
-                      renderInput={(params) => <TextField {...params} size="small" placeholder="Please select a rerank model" />}
+                      renderInput={(params) => <TextField {...params} size="small" placeholder={t('selectRerank')} />}
                       renderOption={(props, option) => (
                         <li {...props} key={option.id} style={{ position: 'relative' }}>
                           <Stack direction="row" spacing={1} alignItems="center">
@@ -1362,7 +1385,7 @@ export default function KBChunkSettings() {
                   </Stack>
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
-                      <Typography variant="caption">Top K</Typography>
+                      <Typography variant="caption">{t('topK')}</Typography>
                       <Stack direction="row" spacing={1} alignItems="center">
                         <Select size="small" disabled={isFromDocuments} value={topK} onChange={e => setTopK(Number(e.target.value))}>
                           {[1,2,3,4,5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}
@@ -1371,7 +1394,7 @@ export default function KBChunkSettings() {
                       </Stack>
                     </Box>
                     <Box>
-                      <FormControlLabel control={<Switch checked={scoreEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setScoreEnabled(v)} />} label="Score Threshold" />
+                      <FormControlLabel control={<Switch checked={scoreEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setScoreEnabled(v)} />} label={t('scoreThreshold')} />
                       <Stack direction="row" spacing={1} alignItems="center">
                         <TextField size="small" value={score} sx={{ width: 80 }} disabled={isFromDocuments} />
                         <Slider disabled={isFromDocuments} value={score} onChange={(_, v) => setScore(v as number)} min={0} max={1} step={0.01} sx={{ width: 220 }} />
@@ -1384,12 +1407,12 @@ export default function KBChunkSettings() {
 
             {/* Full-Text Search */}
             <Paper onClick={isFromDocuments ? () => {} : () => setRetrievalMode('fulltext')} variant="outlined" sx={{ p: 2, mb: 1.5, borderColor: retrievalMode === 'fulltext' ? 'primary.main' : 'divider', cursor: isFromDocuments ? 'not-allowed' : 'pointer', ...(isFromDocuments && { opacity: 0.7 }) }}>
-              <Typography fontWeight={600}>Full-Text Search</Typography>
-              <Typography variant="body2" color="text.secondary">Index all terms in the document, allowing users to search any term and retrieve relevant text chunk containing those terms.</Typography>
+              <Typography fontWeight={600}>{t('fulltextSearch')}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('fulltextSearchDesc')}</Typography>
               {retrievalMode === 'fulltext' && (
                 <Box sx={{ mt: 2 }}>
                   <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
-                    <FormControlLabel control={<Switch checked={rerankEnabled} onChange={(_, v) => setRerankEnabled(v)} />} label="Rerank Model" />
+                    <FormControlLabel control={<Switch checked={rerankEnabled} onChange={(_, v) => setRerankEnabled(v)} />} label={t('rerankModel')} />
                     <Autocomplete
                       sx={{ width: 360 }}
                       options={rerankOptions}
@@ -1406,7 +1429,7 @@ export default function KBChunkSettings() {
                         }
                       }}
                       onHighlightChange={(_, v) => setHighlightedRerank(v)}
-                      renderInput={(params) => <TextField {...params} size="small" placeholder="Please select a rerank model" />}
+                      renderInput={(params) => <TextField {...params} size="small" placeholder={t('selectRerank')} />}
                       renderOption={(props, option) => (
                         <li {...props} key={option.id} style={{ position: 'relative' }}>
                           <Stack direction="row" spacing={1} alignItems="center">
@@ -1431,7 +1454,7 @@ export default function KBChunkSettings() {
                   </Stack>
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
-                      <Typography variant="caption">Top K</Typography>
+                      <Typography variant="caption">{t('topK')}</Typography>
                       <Stack direction="row" spacing={1} alignItems="center">
                         <Select size="small" disabled={isFromDocuments} value={topK} onChange={e => setTopK(Number(e.target.value))}>
                           {[1,2,3,4,5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}
@@ -1440,7 +1463,7 @@ export default function KBChunkSettings() {
                       </Stack>
                     </Box>
                     <Box>
-                      <FormControlLabel control={<Switch checked={scoreEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setScoreEnabled(v)} />} label="Score Threshold" />
+                      <FormControlLabel control={<Switch checked={scoreEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setScoreEnabled(v)} />} label={t('scoreThreshold')} />
                       <Stack direction="row" spacing={1} alignItems="center">
                         <TextField size="small" value={score} sx={{ width: 80 }} disabled={isFromDocuments} />
                         <Slider disabled={isFromDocuments} value={score} onChange={(_, v) => setScore(v as number)} min={0} max={1} step={0.01} sx={{ width: 220 }} />
@@ -1453,19 +1476,19 @@ export default function KBChunkSettings() {
 
             {/* Hybrid Search */}
             <Paper onClick={isFromDocuments ? () => {} : () => setRetrievalMode('hybrid')} variant="outlined" sx={{ p: 2, borderColor: retrievalMode === 'hybrid' ? 'primary.main' : 'divider', cursor: isFromDocuments ? 'not-allowed' : 'pointer', ...(isFromDocuments && { opacity: 0.7 }) }}>
-              <Typography fontWeight={600}>Hybrid Search</Typography>
-              <Chip label="RECOMMEND" size="small" sx={{ ml: 1 }} />
-              <Typography variant="body2" color="text.secondary">Execute full-text search and vector searches simultaneously, re-rank to select the best match for the user's query. Users can choose to set weights or configure to a Rerank model.</Typography>
+              <Typography fontWeight={600}>{t('hybridSearch')}</Typography>
+              <Chip label={t('recommend')} size="small" sx={{ ml: 1 }} />
+              <Typography variant="body2" color="text.secondary">{t('hybridSearchDesc')}</Typography>
               {retrievalMode === 'hybrid' && (
                 <Box sx={{ mt: 2 }}>
                   <Stack direction="row" spacing={2}>
                     <Paper variant="outlined" sx={{ p: 2, flex: 1, display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                      <FormControlLabel control={<Radio checked={hybridStrategy === 'weighted'} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : () => setHybridStrategy('weighted')} />} label="Weighted Score" />
-                      <Typography variant="body2" color="text.secondary">By adjusting the weights assigned, this rerank strategy determines whether to prioritize semantic or keyword matching.</Typography>
+                      <FormControlLabel control={<Radio checked={hybridStrategy === 'weighted'} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : () => setHybridStrategy('weighted')} />} label={t('weightedScore')} />
+                      <Typography variant="body2" color="text.secondary">{t('weightedScoreDesc')}</Typography>
                     </Paper>
                     <Paper variant="outlined" sx={{ p: 2, flex: 1, display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                      <FormControlLabel control={<Radio checked={hybridStrategy === 'rerank'} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : () => setHybridStrategy('rerank')} />} label="Rerank Model" />
-                      <Typography variant="body2" color="text.secondary">Rerank model will reorder the candidate document list based on the semantic match with user query, improving the results of semantic ranking</Typography>
+                      <FormControlLabel control={<Radio checked={hybridStrategy === 'rerank'} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : () => setHybridStrategy('rerank')} />} label={t('rerankModel')} />
+                      <Typography variant="body2" color="text.secondary">{t('rerankDesc')}</Typography>
                     </Paper>
                   </Stack>
                   <Autocomplete
@@ -1484,7 +1507,7 @@ export default function KBChunkSettings() {
                       }
                     }}
                     onHighlightChange={(_, v) => setHighlightedRerank(v)}
-                    renderInput={(params) => <TextField {...params} size="small" placeholder="Please select a rerank model" />}
+                    renderInput={(params) => <TextField {...params} size="small" placeholder={t('selectRerank')} />}
                     renderOption={(props, option) => (
                       <li {...props} key={option.id} style={{ position: 'relative' }}>
                         <Stack direction="row" spacing={1} alignItems="center">
@@ -1508,7 +1531,7 @@ export default function KBChunkSettings() {
                   />
                   <Stack direction="row" spacing={4} alignItems="center" sx={{ mt: 2 }}>
                     <Box>
-                      <Typography variant="caption">Top K</Typography>
+                      <Typography variant="caption">{t('topK')}</Typography>
                       <Stack direction="row" spacing={1} alignItems="center">
                         <Select size="small" disabled={isFromDocuments} value={topK} onChange={e => setTopK(Number(e.target.value))}>
                           {[1,2,3,4,5].map(n => <MenuItem key={n} value={n}>{n}</MenuItem>)}
@@ -1517,7 +1540,7 @@ export default function KBChunkSettings() {
                       </Stack>
                     </Box>
                     <Box>
-                      <FormControlLabel control={<Switch checked={scoreEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setScoreEnabled(v)} />} label="Score Threshold" />
+                      <FormControlLabel control={<Switch checked={scoreEnabled} disabled={isFromDocuments} onChange={isFromDocuments ? undefined : (_, v) => setScoreEnabled(v)} />} label={t('scoreThreshold')} />
                       <Stack direction="row" spacing={1} alignItems="center">
                         <TextField size="small" value={score} sx={{ width: 80 }} disabled={isFromDocuments} />
                         <Slider disabled={isFromDocuments} value={score} onChange={(_, v) => setScore(v as number)} min={0} max={1} step={0.01} sx={{ width: 220 }} />
@@ -1530,22 +1553,22 @@ export default function KBChunkSettings() {
             
             {isFromDocuments && (
               <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 2 }}>
-                * This setting cannot be modified from the Documents page. Please go to Knowledge settings to change.
+                {t('docsPageLocked')}
               </Typography>
             )}
 
             <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
               {isFromDocuments ? (
                 <Button variant="outlined" onClick={() => navigate(kbId ? `/manage/kb/documents/${kbId}` : '/manage/kb')}>
-                  Cancel
+                  {t('cancel')}
                 </Button>
               ) : (
                 <Button variant="outlined" onClick={() => navigate('/manage/kb/upload', { state: { files } })} startIcon={<ArrowBackIcon />}>
-                  Previous step
+                  {t('previousStep')}
                 </Button>
               )}
               <Box sx={{ flex: 1 }} />
-              <Button variant="contained" onClick={handleSaveAndProcess}>Save & Process</Button>
+              <Button variant="contained" onClick={handleSaveAndProcess}>{t('saveAndProcess')}</Button>
             </Stack>
             
             {/* Validation error display */}
@@ -1562,7 +1585,7 @@ export default function KBChunkSettings() {
         <Box sx={{ width: 360 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-              <Typography variant="subtitle2" fontWeight={600}>PREVIEW</Typography>
+              <Typography variant="subtitle2" fontWeight={600}>{t('preview')}</Typography>
               {isFromDocuments ? (
                 <Select 
                   size="small" 
@@ -1588,12 +1611,12 @@ export default function KBChunkSettings() {
             </Stack>
             <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
               {isFromDocuments ? (
-                loadingChunks ? 'Loading chunks...' :
-                showPreview ? `${dbChunks.length} STORED CHUNKS` : 
-                loadingDocuments ? 'Loading documents...' : 
-                `${documents.length} documents available`
+                loadingChunks ? t('loadingChunks') :
+                showPreview ? t('storedChunks', { count: dbChunks.length }) : 
+                loadingDocuments ? t('loadingDocsShort') : 
+                t('docsAvailable', { count: documents.length })
               ) : (
-                showPreview ? `${chunks.length} ESTIMATED CHUNKS` : `${files.length} preprocess documents`
+                showPreview ? t('estimatedChunks', { count: chunks.length }) : t('preprocessDocs', { count: files.length })
               )}
             </Typography>
             
@@ -1602,14 +1625,14 @@ export default function KBChunkSettings() {
                 {currentChunks.map((chunk, index) => (
                   <Paper key={chunk.id} variant="outlined" sx={{ p: 1.5 }}>
                     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                      <Typography variant="caption" color="text.secondary">{chunk.id} · {chunk.characters} characters</Typography>
+                      <Typography variant="caption" color="text.secondary">{chunk.id} · {chunk.characters} {t('characters')}</Typography>
                       <Box sx={{ flex: 1 }} />
                       <Button 
                         size="small" 
                         onClick={() => handleEditChunk(chunk.id)}
                         disabled={isFromDocuments && documentStatus === 'archived'}
                       >
-                        Edit
+                        {t('editChunk')}
                       </Button>
                       <Button 
                         size="small" 
@@ -1617,7 +1640,7 @@ export default function KBChunkSettings() {
                         onClick={() => handleDeleteChunk(chunk.id)}
                         disabled={isFromDocuments && documentStatus === 'archived'}
                       >
-                        Delete
+                        {t('deleteChunk')}
                       </Button>
                     </Stack>
                     {editingChunk === chunk.id ? (
@@ -1631,11 +1654,11 @@ export default function KBChunkSettings() {
                           fullWidth
                         />
                         <Stack direction="row" spacing={1}>
-                          <Button size="small" variant="contained" onClick={handleSaveChunk}>Save</Button>
+                          <Button size="small" variant="contained" onClick={handleSaveChunk}>{t('save')}</Button>
                           <Button size="small" onClick={() => {
                             setEditingChunk(null)
                             setEditingChunkContent('')
-                          }}>Cancel</Button>
+                          }}>{t('cancel')}</Button>
                         </Stack>
                       </Stack>
                     ) : (
@@ -1646,11 +1669,11 @@ export default function KBChunkSettings() {
                 
                 {/* Add new chunk */}
                 <Paper variant="outlined" sx={{ p: 1.5, borderStyle: 'dashed' }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>Add New Chunk</Typography>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('addNewChunk')}</Typography>
                   <TextField
                     multiline
                     rows={3}
-                    placeholder="Enter chunk content..."
+                    placeholder={t('enterChunk')}
                     value={newChunkContent}
                     onChange={e => setNewChunkContent(e.target.value)}
                     size="small"
@@ -1664,7 +1687,7 @@ export default function KBChunkSettings() {
                     onClick={handleAddChunk} 
                     disabled={!newChunkContent.trim() || (isFromDocuments && documentStatus === 'archived')}
                   >
-                    Add Chunk
+                    {t('addChunk')}
                   </Button>
                 </Paper>
 
@@ -1676,17 +1699,17 @@ export default function KBChunkSettings() {
                       disabled={currentPage === 1}
                       onClick={() => setCurrentPage(prev => prev - 1)}
                     >
-                      Previous
+                      {t('previous')}
                     </Button>
                     <Typography variant="body2">
-                      Page {currentPage} of {totalPages}
+                      {t('pageOf', { page: currentPage, total: totalPages })}
                     </Typography>
                     <Button 
                       size="small" 
                       disabled={currentPage === totalPages}
                       onClick={() => setCurrentPage(prev => prev + 1)}
                     >
-                      Next
+                      {t('next')}
                     </Button>
                   </Stack>
                 )}
@@ -1700,7 +1723,7 @@ export default function KBChunkSettings() {
               </Stack>
             ))}
                 <Box sx={{ mt: 4, color: 'text.secondary', textAlign: 'center' }}>
-                  Click the 'Preview Chunk' button on the left to load the preview
+                  {t('previewHint')}
                 </Box>
               </Stack>
             )}

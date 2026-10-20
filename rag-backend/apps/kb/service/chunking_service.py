@@ -251,28 +251,32 @@ class ChunkingService:
     # Numbered section headings: "1 范围", "3.1 一般规定", "8.5 水位流量…"
     # Generic (not language-specific): leading numeric path + short title line.
     _TOC_HEADING_RE = re.compile(
-        r"^(?P<num>\d+(?:\.\d+)*)\s+(?P<title>\S.{0,120}?)\s*$"
+        r"^(?P<num>\d+(?:\.\d+)*)\s+(?P<title>\S.{0,180}?)\s*$"
     )
     # Table-of-contents index lines: "5.1 测站基本属性表...... 5"
     _TOC_INDEX_LINE_RE = re.compile(r"[\.．…·•]{2,}\s*\d+\s*$")
+    # "表1 表标识符分类后缀取值表" — a caption, not a cross-reference ("见表 1").
+    _TABLE_CAPTION_RE = re.compile(r"^表\s*\d+\s+\S")
+    _DOTTED_SECTION_RE = re.compile(r"^\d+(?:\.\d+)+\s+\S")
+    _BARE_NUM_LINE_RE = re.compile(r"^(?P<num>\d+)\s+(?P<title>\S.*?)\s*$")
+    _PAGE_MARK_RE = re.compile(r"^SL\s*\d+(?:-\d+)?$", re.IGNORECASE)
 
     def _parse_toc_heading(self, line: str):
         """Return (num_tuple, title, full_label) or None if line is not a heading."""
         raw = (line or "").strip()
-        if not raw or len(raw) > 160:
+        if not raw or len(raw) > 200:
             return None
         # Skip catalogue/index lines — they create empty stub chunks without tables
         if self._TOC_INDEX_LINE_RE.search(raw):
             return None
-        # Reject table-like / prose-heavy lines
-        if raw.count("|") >= 2:
+        # A page number glued to the next line: "17 表16 …", "19 11", "82 9 交换信息类表结构"
+        if re.match(r"^\d+\s+表\s*\d+", raw) or re.match(r"^\d+\s+\d+(\s|$)", raw):
             return None
-        if re.search(r"[：:。；;]", raw):
+        # Reject table-like lines
+        if raw.count("|") >= 2:
             return None
         # Reject schema / table data rows e.g. "1 测站编码 STCD C(8) N 1"
         tokens = re.split(r"\s+", raw)
-        if len(tokens) >= 5:
-            return None
         if any(re.match(r"^[A-Za-z]{1,4}\(\d", t) for t in tokens):
             return None
         if any(t.upper() in {"DATETIME", "VARCHAR", "INTEGER", "BOOLEAN", "FLOAT", "DOUBLE"} for t in tokens):
@@ -287,10 +291,19 @@ class ChunkingService:
         num_s = m.group("num")
         title = m.group("title").strip()
         title = re.sub(r"[\.．…·•\s]+\d*$", "", title).strip()
-        if not title or len(title) > 100:
+        if not title or len(title) > 160:
             return None
-        # Too many tokens in title → not a section heading
-        if len(re.split(r"\s+", title)) > 8:
+        # A bare number ("3 河流名称 …") collides with table rows. Multi-level
+        # numbers ("3.1.1", "3.2.7") are section clauses; PDF text often inserts
+        # spaces and a trailing "。" into those lines.
+        has_dot = "." in num_s
+        if not has_dot and len(tokens) >= 5:
+            return None
+        if not has_dot and re.search(r"[：:。；;]", raw):
+            return None
+        # Wrapped body lines often start with a bare number ("2 地下水……共77张表。").
+        # Real chapter titles are short.
+        if not has_dot and (len(title) > 24 or len(re.split(r"\s+", title)) > 6):
             return None
         try:
             num_tuple = tuple(int(x) for x in num_s.split("."))
@@ -299,50 +312,34 @@ class ChunkingService:
         label = f"{num_s} {title}"
         return num_tuple, title, label
 
-    def _is_toc_leaf(self, path: tuple, all_paths: List[tuple]) -> bool:
-        """Leaf = no other heading has this path as a proper prefix."""
-        return not any(
-            len(other) > len(path) and other[: len(path)] == path for other in all_paths
-        )
-
     def _dedupe_toc_chunks(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Keep the longest chunk per section label (prefer body over short duplicates)."""
-        best: Dict[str, Dict[str, Any]] = {}
-        order: List[str] = []
-        for chunk in chunks:
-            key = (chunk.get("embedding_text") or chunk.get("title") or chunk.get("id") or "").strip()
-            if not key:
-                key = chunk.get("id") or str(id(chunk))
-            if key not in best:
-                order.append(key)
-                best[key] = chunk
-            elif chunk.get("characters", 0) > best[key].get("characters", 0):
-                best[key] = chunk
-        # Drop near-empty stubs (heading line only)
+        """Drop only exact content duplicates. Different bodies that share a label are kept."""
+        seen = set()
         result = []
-        for key in order:
-            chunk = best[key]
-            label = (chunk.get("embedding_text") or "").strip()
-            body = (chunk.get("content") or "").strip()
-            # Skip catalogue stubs: content is only the heading line
-            body_lines = [ln for ln in body.splitlines() if ln.strip()]
-            if label and len(body_lines) <= 1 and body_lines and label in body_lines[0]:
+        for chunk in chunks:
+            content = (chunk.get("content") or "").strip()
+            if not content or content in seen:
                 continue
+            seen.add(content)
             result.append(chunk)
-        # Re-number ids
         for i, chunk in enumerate(result, 1):
             chunk["id"] = f"toc_{i}"
         return result
 
     def _process_toc_document(self, text: str) -> List[Dict[str, Any]]:
         """
-        Chunk by smallest (leaf) numbered directory/section headings.
-        embedding_text / title = section name (used for vector search, like Q&A questions).
-        content = full section body including the heading line.
+        Chunk at the configured directory depth (default 3, max 6).
+        Headings deeper than that stay inside the level-N chunk.
+        A shallower heading that has children at level N is not its own chunk;
+        it is written into the nearest level-N chunk. A shallower heading with
+        no level-N descendant stays its own chunk so its body is not abandoned.
         """
         lines = text.replace("\r\n", "\n").split("\n")
+        table_rows = self._table_body_indexes(lines)
         headings = []  # {index, path, label, title}
         for i, line in enumerate(lines):
+            if i in table_rows:
+                continue
             parsed = self._parse_toc_heading(line)
             if not parsed:
                 continue
@@ -361,51 +358,232 @@ class ChunkingService:
                 }
             ] if body else []
 
-        all_paths = [h["path"] for h in headings]
-        leaf_indices = [
-            i for i, h in enumerate(headings) if self._is_toc_leaf(h["path"], all_paths)
+        level = self._toc_level()
+        anchor_positions = [
+            i for i in range(len(headings)) if self._is_toc_anchor(headings, i, level)
         ]
+        if not anchor_positions:
+            body = text.strip()
+            return [
+                {
+                    "id": "toc_1",
+                    "content": body,
+                    "characters": len(body),
+                    "embedding_text": body[:200] if body else "",
+                    "title": "",
+                }
+            ] if body else []
+
+        starts = []
+        for n, ai in enumerate(anchor_positions):
+            anchor = headings[ai]
+            if n == 0:
+                starts.append(0)
+                continue
+            start = anchor["index"]
+            prev_ai = anchor_positions[n - 1]
+            for mid in headings[prev_ai + 1 : ai]:
+                # Parent of this anchor (e.g. "3.2 基本内容" before "3.2.1")
+                # opens the chunk so it is not left in the previous section.
+                if (
+                    len(mid["path"]) < len(anchor["path"])
+                    and anchor["path"][: len(mid["path"])] == mid["path"]
+                ):
+                    start = mid["index"]
+                    break
+            starts.append(start)
 
         chunks: List[Dict[str, Any]] = []
-        # Optional preamble before first heading (skip pure TOC pages)
-        first_idx = headings[0]["index"]
-        if first_idx > 0:
-            preamble = "\n".join(lines[:first_idx]).strip()
-            # Ignore short front-matter / catalogue leftovers
-            if preamble and len(preamble) >= 80 and not re.search(r"目\s*次|contents", preamble[:40], re.I):
-                chunks.append(
-                    {
-                        "id": f"toc_{len(chunks) + 1}",
-                        "content": preamble,
-                        "characters": len(preamble),
-                        "embedding_text": preamble.split("\n", 1)[0][:200],
-                        "title": preamble.split("\n", 1)[0][:80],
-                    }
-                )
-
-        for h_i in leaf_indices:
-            h = headings[h_i]
-            start = h["index"]
-            end = len(lines)
-            for later in headings[h_i + 1 :]:
-                end = later["index"]
-                break
+        for n, ai in enumerate(anchor_positions):
+            start = starts[n]
+            end = starts[n + 1] if n + 1 < len(starts) else len(lines)
+            if end < start:
+                end = start
             body = "\n".join(lines[start:end]).strip()
             if not body:
                 continue
+            anchor = headings[ai]
             chunks.append(
                 {
                     "id": f"toc_{len(chunks) + 1}",
                     "content": body,
                     "characters": len(body),
-                    "embedding_text": h["label"],
-                    "title": h["label"],
+                    "embedding_text": anchor["label"],
+                    "title": anchor["label"],
                 }
             )
 
         chunks = self._dedupe_toc_chunks(chunks)
-        print(f"Generated {len(chunks)} TOC leaf chunks from {len(headings)} headings ({len(leaf_indices)} leaves)")
+        print(
+            f"Generated {len(chunks)} TOC chunks at level {level} "
+            f"from {len(headings)} headings ({len(anchor_positions)} anchors)"
+        )
         return chunks
+
+    def _table_body_indexes(self, lines: List[str]) -> set:
+        """
+        Line indexes that belong to a table body.
+
+        PDF text has no table markers, and code-list rows such as
+        "001 基本信息类 B" or "1 中央报汛站" match the section-heading pattern.
+        Those rows stay in the section that contains the table instead of
+        opening their own chunks.
+        """
+        masked = set()
+        self._mask_caption_tables(lines, masked)
+        self._mask_serial_runs(lines, masked)
+        return masked
+
+    def _mask_caption_tables(self, lines: List[str], masked: set) -> None:
+        i = 0
+        while i < len(lines):
+            if not self._TABLE_CAPTION_RE.match(lines[i].strip()):
+                i += 1
+                continue
+            end = min(len(lines), i + 160)
+            j = i + 1
+            while j < end:
+                if self._line_ends_table(lines, j):
+                    break
+                masked.add(j)
+                j += 1
+            i = j if j > i else i + 1
+
+    def _line_ends_table(self, lines: List[str], index: int) -> bool:
+        raw = lines[index].strip()
+        if not raw or self._PAGE_MARK_RE.match(raw):
+            return False
+        if self._DOTTED_SECTION_RE.match(raw) and not self._TOC_INDEX_LINE_RE.search(raw):
+            return True
+        if self._is_chapter_line(lines, index):
+            return True
+        # A paragraph, clause, or sentence after the last row. Header rows and
+        # wrapped cells stay inside the table.
+        if re.match(r"^\d+\s+\S", raw):
+            return False
+        if re.match(r"^表\s*\d+\s+\S", raw):
+            return False
+        if re.search(r"[。；：:]", raw) or raw.startswith(("——", "—", "其中")):
+            return True
+        if re.match(r"^\d+[)）]", raw):
+            return True
+        return len(raw) > 48
+
+    def _is_chapter_line(self, lines: List[str], index: int) -> bool:
+        """A bare '5 基本信息类表结构' line, not a one-column table row."""
+        raw = lines[index].strip()
+        match = self._BARE_NUM_LINE_RE.match(raw)
+        if not match or self._TOC_INDEX_LINE_RE.search(raw):
+            return False
+        num_s = match.group("num")
+        if len(num_s) > 1 and num_s.startswith("0"):
+            return False
+        if len(re.split(r"\s+", raw)) != 2:
+            return False
+        title = match.group("title")
+        if len(title) > 40 or re.search(r"[。；;]", title):
+            return False
+        number = int(num_s)
+        previous = self._neighbor_bare_number(lines, index, -1)
+        following = self._neighbor_bare_number(lines, index, 1)
+        if previous is not None and previous == number - 1:
+            return False
+        if following is not None and following == number + 1:
+            return False
+        return True
+
+    def _neighbor_bare_number(self, lines: List[str], index: int, step: int):
+        j = index + step
+        while 0 <= j < len(lines):
+            raw = lines[j].strip()
+            if not raw or self._PAGE_MARK_RE.match(raw):
+                j += step
+                continue
+            if self._DOTTED_SECTION_RE.match(raw):
+                return None
+            match = self._BARE_NUM_LINE_RE.match(raw)
+            if not match:
+                return None
+            num_s = match.group("num")
+            if len(num_s) > 1 and num_s.startswith("0"):
+                return int(num_s)
+            return int(num_s)
+        return None
+
+    def _mask_serial_runs(self, lines: List[str], masked: set) -> None:
+        """Adjacent '1 … / 2 … / 3 …' or '001 … / 002 …' lines are table rows."""
+        run: List[int] = []
+        numbers: List[int] = []
+
+        def flush() -> None:
+            if len(run) >= 2 and all(numbers[k + 1] == numbers[k] + 1 for k in range(len(numbers) - 1)):
+                masked.update(run)
+                # A trailing code such as "0 其它" sits on the next line and is not N+1.
+                nxt = run[-1] + 1
+                if nxt < len(lines):
+                    tail = lines[nxt].strip()
+                    tail_match = self._BARE_NUM_LINE_RE.match(tail)
+                    if tail_match and len(tail) <= 16:
+                        masked.add(nxt)
+            run.clear()
+            numbers.clear()
+
+        for i, line in enumerate(lines):
+            raw = line.strip()
+            if not raw or self._PAGE_MARK_RE.match(raw):
+                continue
+            if self._DOTTED_SECTION_RE.match(raw) or self._TOC_INDEX_LINE_RE.search(raw):
+                flush()
+                continue
+            match = self._BARE_NUM_LINE_RE.match(raw)
+            if not match:
+                flush()
+                continue
+            num_s = match.group("num")
+            # A real clause immediately followed by "N.1" is not a table row.
+            nxt = self._next_substantive(lines, i)
+            if nxt and re.match(rf"^{int(num_s)}\.\d+\s+", nxt) and not (len(num_s) > 1 and num_s.startswith("0")):
+                flush()
+                continue
+            if run and int(num_s) != numbers[-1] + 1:
+                flush()
+            run.append(i)
+            numbers.append(int(num_s))
+        flush()
+
+    def _next_substantive(self, lines: List[str], index: int):
+        j = index + 1
+        while j < len(lines):
+            raw = lines[j].strip()
+            if raw and not self._PAGE_MARK_RE.match(raw):
+                return raw
+            j += 1
+        return ""
+
+    def _is_toc_anchor(self, headings: List[Dict[str, Any]], index: int, level: int) -> bool:
+        """True when this heading should open its own chunk at the chosen depth."""
+        path = headings[index]["path"]
+        depth = len(path)
+        if depth > level:
+            return False
+        if depth == level:
+            return True
+        # Shallower section: keep it only when nothing under it reaches `level`.
+        for other in headings[index + 1 :]:
+            other_path = other["path"]
+            if len(other_path) <= depth or other_path[:depth] != path:
+                break
+            if len(other_path) >= level:
+                return False
+        return True
+
+    def _toc_level(self) -> int:
+        raw = self.settings.get("toc_level", self.settings.get("tocLevel", 3))
+        try:
+            level = int(raw)
+        except (TypeError, ValueError):
+            level = 3
+        return max(1, min(6, level))
 
     def _split_into_chunks(self, text: str) -> List[Dict[str, Any]]:
         """Split text into chunks based on delimiter and length settings"""

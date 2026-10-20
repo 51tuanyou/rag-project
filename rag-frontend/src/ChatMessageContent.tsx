@@ -32,7 +32,11 @@ function splitPlainCells(line: string): string[] {
   // Single-space fallback: only treat as columns when the line looks like a short
   // multi-token row (not a sentence). Keep this conservative.
   const tokens = t.split(/\s+/).filter(Boolean)
-  if (tokens.length >= 4 && tokens.length <= 12 && !looksLikeProse(t)) {
+  if (tokens.length >= 3 && tokens.length <= 16 && !looksLikeProse(t)) {
+    // "001 基本信息类 存储……等信息" — the description is the last column
+    if (/^\d+$/.test(tokens[0]) && tokens.length > 3) {
+      return [tokens[0], tokens[1], tokens.slice(2).join(' ')]
+    }
     return tokens
   }
   return [t]
@@ -52,8 +56,12 @@ function looksLikeProse(line: string): boolean {
   // Sentence / definition punctuation common across CJK and Latin docs
   if (/[：:。；;！？?]/.test(t)) return true
 
-  // Long line with few separators → paragraph, not a table row
-  if (t.length >= 40 && (t.match(/\s{2,}|\t|\|/g) || []).length === 0) return true
+  // Long line with few separators → paragraph, not a table row.
+  // Numbered table rows ("001 基本信息类 存储……") stay rows even when the last cell is long.
+  if (t.length >= 40 && (t.match(/\s{2,}|\t|\|/g) || []).length === 0) {
+    if (/^\d{1,4}\s+\S+\s+\S+/.test(t)) return false
+    return true
+  }
 
   return false
 }
@@ -247,7 +255,7 @@ export default function ChatMessageContent({ content }: { content: string }) {
                 {block.rows.map((row, ri) => (
                   <TableRow key={ri}>
                     {block.headers.map((_, ci) => (
-                      <TableCell key={ci} sx={{ whiteSpace: 'nowrap', py: 0.5 }}>
+                      <TableCell key={ci} sx={{ whiteSpace: 'normal', py: 0.5, verticalAlign: 'top' }}>
                         {row[ci] ?? ''}
                       </TableCell>
                     ))}

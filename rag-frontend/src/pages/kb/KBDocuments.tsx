@@ -41,8 +41,10 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import EditIcon from '@mui/icons-material/Edit'
 import ArchiveIcon from '@mui/icons-material/Archive'
 import DeleteIcon from '@mui/icons-material/Delete'
+import DownloadIcon from '@mui/icons-material/Download'
 import UnarchiveIcon from '@mui/icons-material/Unarchive'
 import { useNavigate, useParams } from 'react-router-dom'
+import { AppTitle, modeLabel, useI18n } from '../../i18n'
 
 // Document type interface
 interface Document {
@@ -62,6 +64,7 @@ interface Document {
 }
 
 export default function KBDocuments() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const { kbId } = useParams<{ kbId: string }>()
   const [documents, setDocuments] = useState<Document[]>([])
@@ -162,6 +165,20 @@ export default function KBDocuments() {
       setDeleteDialogOpen(true)
     }
     setMenuAnchor(null) // Close menu but keep selectedDocument
+  }
+
+  const handleDownload = () => {
+    if (!selectedDocument) return
+    const fileName = selectedDocument.file_name
+    const href = `${API_BASE}/api/kb/documents/${selectedDocument.id}/file/${encodeURIComponent(fileName)}?download=1`
+    const link = document.createElement('a')
+    link.href = href
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setMenuAnchor(null)
+    setSelectedDocument(null)
   }
 
   // Handle rename dialog
@@ -356,7 +373,7 @@ export default function KBDocuments() {
   if (loading) {
     return (
       <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <Typography>Loading documents...</Typography>
+        <Typography>{t('loadingDocuments')}</Typography>
       </Box>
     )
   }
@@ -372,16 +389,14 @@ export default function KBDocuments() {
   return (
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
       <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
-        <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-          RAG Tool
-        </Typography>
+        <AppTitle />
         
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h6">
-            Documents {knowledgeBaseName && `- ${knowledgeBaseName}`}
+            {t('documentsTitle')} {knowledgeBaseName && `- ${knowledgeBaseName}`}
           </Typography>
           <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
-            返回管理知识库
+            {t('backToKb')}
           </Button>
         </Stack>
 
@@ -392,22 +407,22 @@ export default function KBDocuments() {
             onChange={(e) => setStatusFilter(e.target.value)}
             sx={{ width: 140 }}
           >
-            <MenuItem value="all">All Status</MenuItem>
-            <MenuItem value="completed">Available</MenuItem>
-            <MenuItem value="disabled">Disabled</MenuItem>
-            <MenuItem value="failed">Failed</MenuItem>
-            <MenuItem value="processing">Processing</MenuItem>
+            <MenuItem value="all">{t('allStatus')}</MenuItem>
+            <MenuItem value="completed">{t('available')}</MenuItem>
+            <MenuItem value="disabled">{t('disabled')}</MenuItem>
+            <MenuItem value="failed">{t('failed')}</MenuItem>
+            <MenuItem value="processing">{t('processing')}</MenuItem>
           </Select>
           <TextField 
             size="small" 
-            placeholder="Search" 
+            placeholder={t('search')} 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             sx={{ flex: 1 }} 
           />
-          <Button variant="contained" startIcon={<Add />}>ADD FILE</Button>
+          <Button variant="contained" startIcon={<Add />}>{t('addFile')}</Button>
           <Button variant="outlined" onClick={() => navigate(`/manage/kb/retrieval-test/${kbId}`)}>
-            Retrieval Test
+            {t('retrievalTest')}
           </Button>
         </Stack>
 
@@ -416,30 +431,42 @@ export default function KBDocuments() {
             <TableHead>
               <TableRow>
                 <TableCell sx={{ width: 44 }}>#</TableCell>
-                <TableCell>NAME</TableCell>
-                <TableCell>CHUNKING MODE</TableCell>
-                <TableCell>WORDS</TableCell>
-                <TableCell>RETRIEVAL COUNT</TableCell>
-                <TableCell>UPLOAD TIME</TableCell>
-                <TableCell>STATUS</TableCell>
-                <TableCell align="right">ACTION</TableCell>
+                <TableCell>{t('name')}</TableCell>
+                <TableCell>{t('chunkingMode')}</TableCell>
+                <TableCell>{t('words')}</TableCell>
+                <TableCell>{t('retrievalCount')}</TableCell>
+                <TableCell>{t('uploadTime')}</TableCell>
+                <TableCell>{t('status')}</TableCell>
+                <TableCell align="right">{t('action')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {filteredDocuments.map((doc, idx) => (
                 <TableRow key={doc.id} hover>
                   <TableCell>{idx + 1}</TableCell>
-                  <TableCell 
-                    onClick={() => navigate(`/manage/kb/documents/${doc.id}`, { state: { document: doc } })} 
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <Stack direction="row" spacing={1} alignItems="center">
+                  <TableCell>
+                    <Stack
+                      component="a"
+                      direction="row"
+                      spacing={1}
+                      alignItems="center"
+                      href={`${API_BASE}/api/kb/documents/${doc.id}/file/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={t('openInBrowser')}
+                      sx={{
+                        color: 'inherit',
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        '&:hover .doc-name': { textDecoration: 'underline' },
+                      }}
+                    >
                       {getFileIcon(doc.file_type)}
-                      <Typography color="primary">{doc.file_name}</Typography>
+                      <Typography className="doc-name" color="primary">{doc.file_name}</Typography>
                     </Stack>
                   </TableCell>
                   <TableCell>
-                    <Chip size="small" label={doc.chunking_mode} variant="outlined" />
+                    <Chip size="small" label={modeLabel(doc.chunking_mode, t)} variant="outlined" />
                   </TableCell>
                   <TableCell>{doc.word_count}</TableCell>
                   <TableCell>{doc.retrieval_count}</TableCell>
@@ -456,17 +483,17 @@ export default function KBDocuments() {
                         }} 
                       />
                       <Typography>
-                        {doc.status === 'completed' ? 'Available' : 
-                         doc.status === 'failed' ? 'Failed' : 
-                         doc.status === 'disabled' ? 'Disabled' : 
-                         doc.status === 'archived' ? 'Archived' : 'Processing'}
+                        {doc.status === 'completed' ? t('available') : 
+                         doc.status === 'failed' ? t('failed') : 
+                         doc.status === 'disabled' ? t('disabled') : 
+                         doc.status === 'archived' ? t('archived') : t('processing')}
                       </Typography>
                     </Stack>
                   </TableCell>
                   <TableCell align="right">
                     <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
                       <Tooltip 
-                        title={doc.status === 'archived' ? 'Archived file cannot be enabled' : ''}
+                        title={doc.status === 'archived' ? t('archivedCannotEnable') : ''}
                         placement="top"
                       >
                         <span>
@@ -523,12 +550,18 @@ export default function KBDocuments() {
             horizontal: 'right',
           }}
         >
+          <MenuItem onClick={handleDownload}>
+            <ListItemIcon>
+              <DownloadIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{t('download')}</ListItemText>
+          </MenuItem>
           {selectedDocument?.status === 'completed' && (
             <MenuItem onClick={handleRename}>
               <ListItemIcon>
                 <EditIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>Rename</ListItemText>
+              <ListItemText>{t('rename')}</ListItemText>
             </MenuItem>
           )}
           {selectedDocument?.status === 'completed' ? (
@@ -536,21 +569,21 @@ export default function KBDocuments() {
               <ListItemIcon>
                 <ArchiveIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>Archive</ListItemText>
+              <ListItemText>{t('archive')}</ListItemText>
             </MenuItem>
           ) : selectedDocument?.status === 'archived' ? (
             <MenuItem onClick={handleUnarchive}>
               <ListItemIcon>
                 <UnarchiveIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>Unarchive</ListItemText>
+              <ListItemText>{t('unarchive')}</ListItemText>
             </MenuItem>
           ) : null}
           <MenuItem onClick={handleDelete}>
             <ListItemIcon>
               <DeleteIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Delete</ListItemText>
+            <ListItemText>{t('delete')}</ListItemText>
           </MenuItem>
         </Menu>
 
@@ -561,10 +594,10 @@ export default function KBDocuments() {
           maxWidth="sm"
           fullWidth
         >
-          <DialogTitle>Rename</DialogTitle>
+          <DialogTitle>{t('rename')}</DialogTitle>
           <DialogContent>
             <Typography variant="body2" sx={{ mb: 1 }}>
-              Name
+              {t('name')}
             </Typography>
             <TextField
               fullWidth
@@ -576,14 +609,14 @@ export default function KBDocuments() {
           </DialogContent>
           <DialogActions>
             <Button onClick={handleRenameDialogClose}>
-              Cancel
+              {t('cancel')}
             </Button>
             <Button 
               onClick={handleRenameSave}
               variant="contained"
               disabled={!newFileName.trim()}
             >
-              Save
+              {t('save')}
             </Button>
           </DialogActions>
         </Dialog>
@@ -595,22 +628,22 @@ export default function KBDocuments() {
           maxWidth="sm"
           fullWidth
         >
-          <DialogTitle>Are you sure Delete?</DialogTitle>
+          <DialogTitle>{t('deleteDocTitle')}</DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary">
-              If you need to resume processing later, you will continue from where you left off
+              {t('deleteDocBody', { name: selectedDocument?.file_name || '' })}
             </Typography>
           </DialogContent>
           <DialogActions>
             <Button onClick={handleDeleteDialogClose}>
-              Cancel
+              {t('cancel')}
             </Button>
             <Button 
               onClick={handleDeleteConfirm}
               variant="contained"
               color="error"
             >
-              I'm sure
+              {t('imSure')}
             </Button>
           </DialogActions>
         </Dialog>

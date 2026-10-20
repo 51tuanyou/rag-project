@@ -50,7 +50,7 @@ services:
       DINGTALK_BRIDGE_TOKEN: ${DINGTALK_BRIDGE_TOKEN:-}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://llm.paoditu.com}
     ports:
-      - "${DINGTALK_BRIDGE_PORT:-8010}:8010"
+      - "${DINGTALK_BRIDGE_PORT:-8110}:8110"
     networks:
       - default
     depends_on:
@@ -62,7 +62,7 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=3)",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8110/health', timeout=3)",
         ]
       interval: 30s
       timeout: 5s

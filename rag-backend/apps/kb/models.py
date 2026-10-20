@@ -26,6 +26,8 @@ class ChunkSettings(models.Model):
     question_flag = models.CharField(max_length=50, default='Q: ')
     answer_flag = models.CharField(max_length=50, default='A: ')
     qa_max_length = models.IntegerField(default=1024)
+    # TOC: split at this heading depth (1–6). Deeper headings stay inside that chunk.
+    toc_level = models.IntegerField(default=3, help_text="Directory depth used as the chunk boundary, 1 to 6")
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

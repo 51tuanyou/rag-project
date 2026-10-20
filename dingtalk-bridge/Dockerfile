@@ -17,4 +17,4 @@ COPY app.py ./
 
 EXPOSE 8010
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8010", "--timeout-keep-alive", "30"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8110", "--timeout-keep-alive", "30"]

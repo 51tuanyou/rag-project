@@ -15,7 +15,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - D:/docker-volumes/postgres/postgres_data:/var/lib/postgresql/data
+      - /home/gaoyu/volumes/postgres/postgres_data:/var/lib/postgresql/data
     networks:
       - rag_pgvector_net
 

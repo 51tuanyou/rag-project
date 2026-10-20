@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
+import { LanguageProvider } from './i18n.tsx'
 import ManageKB from './pages/kb/ManageKB.tsx'
 import KBUpload from './pages/kb/KBUpload.tsx'
 import KBChunkSettings from './pages/kb/KBChunkSettings.tsx'
@@ -27,6 +28,8 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <LanguageProvider>
+      <RouterProvider router={router} />
+    </LanguageProvider>
   </StrictMode>,
 )

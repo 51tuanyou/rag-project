@@ -19,6 +19,7 @@ import AutorenewIcon from '@mui/icons-material/Autorenew'
 import ErrorIcon from '@mui/icons-material/Error'
 import Tooltip from '@mui/material/Tooltip'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { AppTitle, useI18n } from '../../i18n'
 
 // Add CSS animation for spinning icon
 const spinKeyframes = `
@@ -36,6 +37,7 @@ if (typeof document !== 'undefined') {
 }
 
 export default function KBProcessing() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const { state } = useLocation() as { state?: any }
   const files: string[] = useMemo(() => state?.files ?? [], [state])
@@ -236,6 +238,7 @@ export default function KBProcessing() {
           chunk_type: state?.chunkType ?? (state?.tocFormat ? 'toc' : state?.qaFormat ? 'qa' : 'general'),
           qa_format: state?.qaFormat ?? false,
           toc_format: state?.tocFormat ?? false,
+          toc_level: state?.tocLevel ?? 3,
           qa_language: state?.qaLanguage ?? 'English',
           question_flag: state?.questionFlag ?? 'Q: ',
           answer_flag: state?.answerFlag ?? 'A: ',
@@ -297,38 +300,38 @@ export default function KBProcessing() {
     }
   }, [files, isCreating, completed, knowledgeBaseId])
 
+  const retrievalKey = chunkSettings?.retrieval_mode || state?.retrievalMode || 'vector'
+  const retrievalLabel = retrievalKey === 'fulltext' ? t('fulltextSearchLabel') : retrievalKey === 'hybrid' ? t('hybridSearchLabel') : t('vectorSearchLabel')
   const settings = {
-    chunkingSetting: chunkSettings?.chunk_type === 'qa' ? 'Using Q&A' : (chunkSettings?.delimiter ? 'Custom' : 'General'),
+    chunkingSetting: chunkSettings?.chunk_type === 'qa' ? t('usingQa') : chunkSettings?.chunk_type === 'toc' ? t('directoryStructure') : (chunkSettings?.delimiter && chunkSettings.delimiter !== '\\n\\n' ? t('custom') : t('general')),
     maxLen: chunkSettings?.max_length?.toString() ?? state?.maxLen ?? '1024',
-    preprocess: chunkSettings?.replace_spaces ? 'Replace consecutive spaces, newlines and tabs' : '—',
-    indexMethod: chunkSettings?.index_method === 'hq' ? 'High Quality' : 'Economical',
-    retrieval: (chunkSettings?.retrieval_mode || state?.retrievalMode || 'vector').replace(/\b\w/g, (s: string) => s.toUpperCase()) + ' Search',
+    preprocess: chunkSettings?.replace_spaces ? t('replaceSpaces') : '—',
+    indexMethod: chunkSettings?.index_method === 'hq' ? t('highQuality') : t('economical'),
+    retrieval: retrievalLabel,
   }
 
   return (
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
       <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
-        <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-          RAG Tool
-        </Typography>
+        <AppTitle />
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-        <Typography variant="h5" fontWeight={700}>🎉 Knowledge created</Typography>
+        <Typography variant="h5" fontWeight={700}>{t('knowledgeCreated')}</Typography>
         <Button variant="outlined" onClick={() => navigate('/manage/kb')} startIcon={<ArrowBackIcon />}>
-          返回管理知识库
+          {t('backToKb')}
         </Button>
       </Stack>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>Knowledge name</Typography>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('knowledgeName')}</Typography>
         <TextField fullWidth value={name} onChange={e => setName(e.target.value)} placeholder="knowledge name" />
       </Paper>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
-          {isCreating ? 'CREATING KNOWLEDGE BASE...' : 
-           isVectorizing ? '向量化处理正在进行中...' : 
-           vectorizationFailed ? 'EMBEDDING FAILED' :
-           completed ? 'EMBEDDING COMPLETED' : 'EMBEDDING PROCESSING...'}
+          {isCreating ? t('creatingKb') : 
+           isVectorizing ? t('vectorizing') : 
+           vectorizationFailed ? t('embeddingFailed') :
+           completed ? t('embeddingCompleted') : t('embeddingProcessing')}
         </Typography>
         {files.map((f, i) => {
           // Extract only the filename from the path (handle both / and \ separators)
@@ -337,17 +340,17 @@ export default function KBProcessing() {
           
           // Determine document status
           const isFailed = vectorizationFailed && failedDocuments.has(i + 1) // Assuming document ID is index + 1
-          const errorMessage = documentErrors.get(i + 1) || 'Unknown error'
+          const errorMessage = documentErrors.get(i + 1) || t('unknownErrorShort')
           
           return (
             <Stack key={f + i} direction="row" spacing={1} alignItems="center" sx={{ mb: 1, p: 1, borderRadius: 1, border: '1px solid', borderColor: isFailed ? 'error.main' : 'divider' }}>
               <InsertDriveFileIcon fontSize="small" />
               <Typography sx={{ flex: 1 }}>{fileName}</Typography>
               <Typography variant="caption" sx={{ mr: 1 }}>
-                {isFailed ? 'Disabled' : completed ? 'Available' : isVectorizing ? 'Processing' : 'Pending'}
+                {isFailed ? t('disabled') : completed ? t('available') : isVectorizing ? t('processing') : t('pending')}
               </Typography>
               {isFailed ? (
-                <Tooltip title={`Failed: ${errorMessage}`} arrow>
+                <Tooltip title={t('failedPrefix', { message: errorMessage })} arrow>
                   <ErrorIcon sx={{ color: 'error.main' }} />
                 </Tooltip>
               ) : completed ? (
@@ -366,11 +369,11 @@ export default function KBProcessing() {
         {creationError && (
           <Box sx={{ mt: 2, p: 2, bgcolor: 'error.light', borderRadius: 1, border: '1px solid', borderColor: 'error.main' }}>
             <Typography variant="body2" color="error.main" sx={{ fontWeight: 600 }}>
-              Error: {creationError}
+              {t('errorPrefix', { message: creationError })}
             </Typography>
             {vectorizationFailed && (
               <Typography variant="body2" color="error.main" sx={{ mt: 1 }}>
-                Some documents failed to process. Please check the document status above for details.
+                {t('someDocsFailed')}
               </Typography>
             )}
           </Box>
@@ -379,11 +382,11 @@ export default function KBProcessing() {
 
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
         <Stack spacing={1}>
-          <Row label="Chunking Setting" value={settings.chunkingSetting} />
-          <Row label="Maximum Chunk Length" value={String(settings.maxLen)} />
-          <Row label="Text Preprocessing Rules" value={settings.preprocess} />
-          <Row label="Index Method" value={settings.indexMethod} iconColor="orange" />
-          <Row label="Retrieval Setting" value={settings.retrieval} iconColor="purple" />
+          <Row label={t('chunkingSetting')} value={settings.chunkingSetting} />
+          <Row label={t('maxChunkLengthRow')} value={String(settings.maxLen)} />
+          <Row label={t('preprocessRules')} value={settings.preprocess} />
+          <Row label={t('indexMethod')} value={settings.indexMethod} iconColor="orange" />
+          <Row label={t('retrievalSetting')} value={settings.retrieval} iconColor="purple" />
         </Stack>
       </Paper>
 
@@ -393,7 +396,7 @@ export default function KBProcessing() {
           variant="contained" 
           onClick={() => navigate(`/manage/kb/documents/${knowledgeBaseId}`, { state: { files } })}
         >
-          Go to document
+          {t('goToDocument')}
         </Button>
       </Stack>
       </Box>

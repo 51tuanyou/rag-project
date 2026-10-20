@@ -17,6 +17,14 @@ from django.core.files.base import ContentFile
 from django.utils import timezone
 
 
+def _clamp_toc_level(value) -> int:
+    try:
+        level = int(value)
+    except (TypeError, ValueError):
+        level = 3
+    return max(1, min(6, level))
+
+
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -185,7 +193,8 @@ def create_knowledge_base(request):
             qa_language=settings.get('qa_language', 'English'),
             question_flag=settings.get('question_flag', 'Q: '),
             answer_flag=settings.get('answer_flag', 'A: '),
-            qa_max_length=settings.get('qa_max_length', 1024)
+            qa_max_length=settings.get('qa_max_length', 1024),
+            toc_level=_clamp_toc_level(settings.get('toc_level')),
         )
         print(f"Created chunk_settings with ID: {chunk_settings.id}")
         
@@ -338,6 +347,7 @@ def get_chunk_settings(request, kb_id):
             'question_flag': chunk_settings.question_flag,
             'answer_flag': chunk_settings.answer_flag,
             'qa_max_length': chunk_settings.qa_max_length,
+            'toc_level': chunk_settings.toc_level,
             'index_method': kb.index_method,
             'retrieval_mode': kb.retrieval_mode,
         })
@@ -400,38 +410,137 @@ def get_documents(request):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+_TEXT_CONTENT_TYPES = {
+    '.txt': 'text/plain; charset=utf-8',
+    '.csv': 'text/csv; charset=utf-8',
+    '.md': 'text/plain; charset=utf-8',
+    '.log': 'text/plain; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.xml': 'application/xml; charset=utf-8',
+}
+_NATIVE_CONTENT_TYPES = {
+    '.pdf': 'application/pdf',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.htm': 'text/html; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+}
+
+
+def _content_disposition(filename: str, as_attachment: bool) -> str:
+    """Filename header that keeps the original name, including non-ASCII characters."""
+    from urllib.parse import quote
+
+    disposition = "attachment" if as_attachment else "inline"
+    encoded = quote(filename or "document", safe="")
+    return f"{disposition}; filename*=UTF-8''{encoded}"
+
+
+def _wants_original_download(request) -> bool:
+    return str(request.GET.get("download", "")).lower() in {"1", "true", "yes"}
+
+
+def _original_file_response(path: str, filename: str, as_attachment: bool):
+    from django.http import FileResponse
+    import mimetypes
+
+    ext = os.path.splitext(filename or path)[1].lower()
+    content_type = _NATIVE_CONTENT_TYPES.get(ext)
+    if not content_type:
+        content_type = _TEXT_CONTENT_TYPES.get(ext, "").split(";")[0].strip()
+    if not content_type:
+        content_type, _ = mimetypes.guess_type(filename or path)
+    response = FileResponse(
+        open(path, "rb"),
+        as_attachment=as_attachment,
+        filename=filename,
+        content_type=content_type or "application/octet-stream",
+    )
+    response["Content-Disposition"] = _content_disposition(filename, as_attachment)
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _read_text_file(path: str) -> str:
+    with open(path, 'rb') as handle:
+        raw = handle.read()
+    for encoding in ('utf-8-sig', 'utf-8', 'gb18030'):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode('utf-8', errors='replace')
+
+
+def _resolve_document_path(doc):
+    path = doc.file_path
+    if path and os.path.exists(path):
+        return path
+    alt = os.path.join('temp', doc.file_name)
+    try:
+        path = default_storage.path(alt)
+    except Exception:
+        path = None
+    if path and os.path.exists(path):
+        return path
+    return None
+
+
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
-def download_document(request, doc_id):
-    """Open/download an uploaded knowledge-base document file."""
-    from django.http import FileResponse
-    import mimetypes
+def download_document(request, doc_id, filename=None):
+    """Open a knowledge-base document in the browser, or download the original file."""
+    from django.http import FileResponse, HttpResponse
 
     try:
         doc = Document.objects.get(id=doc_id)
     except Document.DoesNotExist:
         return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    path = doc.file_path
-    if not path or not os.path.exists(path):
-        # Fallback: try storage-relative temp/<name>
-        alt = os.path.join('temp', doc.file_name)
-        try:
-            path = default_storage.path(alt)
-        except Exception:
-            path = None
-        if not path or not os.path.exists(path):
-            return Response({'error': 'File not found on server'}, status=status.HTTP_404_NOT_FOUND)
+    path = _resolve_document_path(doc)
+    if not path:
+        return Response({'error': 'File not found on server'}, status=status.HTTP_404_NOT_FOUND)
 
-    content_type, _ = mimetypes.guess_type(doc.file_name)
+    ext = os.path.splitext(doc.file_name or path)[1].lower()
+    if _wants_original_download(request):
+        return _original_file_response(path, doc.file_name, as_attachment=True)
+
+    disposition = _content_disposition(doc.file_name, as_attachment=False)
+
+    parser = DocumentParser()
+    try:
+        preview_html = parser.render_browser_html(path, doc.file_name)
+    except Exception:
+        preview_html = None
+    if preview_html is not None:
+        response = HttpResponse(preview_html, content_type='text/html; charset=utf-8')
+        response['Content-Disposition'] = 'inline'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
+
+    if ext in _TEXT_CONTENT_TYPES:
+        response = HttpResponse(_read_text_file(path), content_type=_TEXT_CONTENT_TYPES[ext])
+        response['Content-Disposition'] = disposition
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
+
+    content_type = _NATIVE_CONTENT_TYPES.get(ext)
+    if not content_type:
+        import mimetypes
+        content_type, _ = mimetypes.guess_type(doc.file_name)
     response = FileResponse(
         open(path, 'rb'),
         as_attachment=False,
         filename=doc.file_name,
         content_type=content_type or 'application/octet-stream',
     )
-    response['Content-Disposition'] = f'inline; filename="{doc.file_name}"'
+    response['Content-Disposition'] = disposition
+    response['X-Content-Type-Options'] = 'nosniff'
     return response
 
 

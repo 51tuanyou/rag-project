@@ -7,13 +7,97 @@ import json
 import os
 import re
 from typing import Any, Dict, Optional, Tuple
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 from apps.kb.models import Document, KnowledgeBase
 from apps.llm.models import ModelCredential
 from apps.llm.service.llm_service import LLMService
 from apps.agents.models import QueryHistory
 from apps.agents.services.retrieval_service import RetrievalService
+
+
+_SECTION_HEADING_RE = re.compile(r"(?:^|\s)\d+\.\d+(?:\.\d+)*\s+\S")
+_PAGE_MARK_RE = re.compile(r"^SL\s*\d+(?:-\d+)?$", re.IGNORECASE)
+_source_text_cache: dict[str, str] = {}
+
+
+def _load_document_text(file_path: str) -> str:
+    """Parsed document text, spaced the same way chunks were built."""
+    if not file_path or not os.path.exists(file_path):
+        return ""
+    cached = _source_text_cache.get(file_path)
+    if cached is not None:
+        return cached
+    from apps.kb.service.chunking_service import ChunkingService
+    from apps.kb.service.document_parser import DocumentParser
+
+    raw = DocumentParser().parse_document(file_path)
+    text = ChunkingService({"replace_spaces": True})._preprocess_text(raw)
+    if len(_source_text_cache) > 6:
+        _source_text_cache.pop(next(iter(_source_text_cache)))
+    _source_text_cache[file_path] = text
+    return text
+
+
+_TABLE_CAPTION_RE = re.compile(r"^表\s*\d+\s+\S")
+
+
+def _chunk_ends_at_table_head(content: str) -> bool:
+    """True when the chunk stops on a caption or the header line under it."""
+    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    last = lines[-1]
+    prev = lines[-2] if len(lines) > 1 else ""
+    if _TABLE_CAPTION_RE.match(last):
+        return True
+    if _TABLE_CAPTION_RE.match(prev) and len(last) <= 48 and not re.search(r"[。；]", last):
+        return True
+    return False
+
+
+def complete_truncated_table(content: str, source_text: str) -> str:
+    """
+    Older chunks stop at a table header and drop the body rows.
+    If the original document continues with those rows, append them.
+    """
+    content = (content or "").strip()
+    source_text = source_text or ""
+    if not content or not source_text or not _chunk_ends_at_table_head(content):
+        return content
+
+    tail_lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    if not tail_lines:
+        return content
+    tail = "\n".join(tail_lines[-2:]) if len(tail_lines) >= 2 else tail_lines[-1]
+    idx = source_text.rfind(tail)
+    if idx < 0:
+        idx = source_text.rfind(tail_lines[-1])
+        if idx < 0:
+            return content
+        end = idx + len(tail_lines[-1])
+    else:
+        end = idx + len(tail)
+
+    extra: list[str] = []
+    for line in source_text[end:].splitlines():
+        raw = line.strip()
+        if not raw or _PAGE_MARK_RE.match(raw):
+            if extra and not raw:
+                break
+            continue
+        if _SECTION_HEADING_RE.search(raw) and not re.match(r"^0\d+\s+", raw):
+            break
+        if re.search(r"[。；]", raw) and not re.match(r"^\d+\s+", raw):
+            break
+        if not re.match(r"^\d+\s+\S", raw) and len(raw) > 48:
+            break
+        extra.append(raw)
+        if len(extra) >= 40:
+            break
+    if not extra:
+        return content
+    return content.rstrip() + "\n" + "\n".join(extra)
 
 
 def as_bool(value, default=False) -> bool:
@@ -193,6 +277,18 @@ def run_chat(
                     rerank_model_name=rerank_model_name,
                 )
 
+            doc_text_cache: dict[int, str] = {}
+            for chunk in similar_chunks:
+                doc_id = chunk.get("document_id")
+                if not doc_id:
+                    continue
+                if doc_id not in doc_text_cache:
+                    doc = Document.objects.filter(id=doc_id).only("file_path").first()
+                    doc_text_cache[doc_id] = _load_document_text(doc.file_path) if doc else ""
+                source_text = doc_text_cache[doc_id]
+                if source_text:
+                    chunk["content"] = complete_truncated_table(chunk.get("content") or "", source_text)
+
             logs.append(f"检索到 {len(similar_chunks)} 个相关分块")
             if similar_chunks and similar_chunks[0].get("reranked"):
                 logs.append("分块顺序已按 Rerank 分数重排")
@@ -288,21 +384,19 @@ def run_chat(
                     if not doc_id or doc_id in seen_doc_ids:
                         continue
                     seen_doc_ids.add(doc_id)
-                    rel_url = f"/api/kb/documents/{doc_id}/file/"
-                    abs_url = _absolute_url(rel_url, public_base_url)
                     try:
                         doc = Document.objects.get(id=doc_id)
-                        source_documents.append({
-                            "id": doc.id,
-                            "file_name": doc.file_name,
-                            "url": abs_url if public_base_url else rel_url,
-                        })
+                        file_name = doc.file_name
                     except Document.DoesNotExist:
-                        source_documents.append({
-                            "id": doc_id,
-                            "file_name": chunk.get("source_document") or f"Document {doc_id}",
-                            "url": abs_url if public_base_url else rel_url,
-                        })
+                        doc = None
+                        file_name = chunk.get("source_document") or f"Document {doc_id}"
+                    rel_url = f"/api/kb/documents/{doc_id}/file/{quote(file_name)}?download=1"
+                    abs_url = _absolute_url(rel_url, public_base_url)
+                    source_documents.append({
+                        "id": doc.id if doc else doc_id,
+                        "file_name": file_name,
+                        "url": abs_url if public_base_url else rel_url,
+                    })
 
                 if open_original and source_documents:
                     link_lines = ["", "原文档："]

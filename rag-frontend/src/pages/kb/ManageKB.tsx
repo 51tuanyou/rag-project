@@ -38,6 +38,7 @@ import CheckIcon from '@mui/icons-material/Check'
 import CloseIcon from '@mui/icons-material/Close'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
 import { useNavigate } from 'react-router-dom'
+import { AppTitle, modeLabel, useI18n } from '../../i18n'
 
 type KnowledgeBase = {
   id: number
@@ -90,6 +91,7 @@ type KbTag = {
 }
 
 export default function ManageKB() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [kbs, setKbs] = useState<KnowledgeBase[]>([])
@@ -218,10 +220,10 @@ export default function ManageKB() {
 
   const validate = (v: KbForm) => {
     const es: Record<string, string> = {}
-    if (!v.name.trim()) es.name = '必填'
-    if (!v.type.trim()) es.type = '必选'
-    if (!v.baseUrl.trim()) es.baseUrl = '必填'
-    if (!v.contextSize.trim() || isNaN(Number(v.contextSize))) es.contextSize = '请输入数字'
+    if (!v.name.trim()) es.name = t('required')
+    if (!v.type.trim()) es.type = t('requiredChoice')
+    if (!v.baseUrl.trim()) es.baseUrl = t('required')
+    if (!v.contextSize.trim() || isNaN(Number(v.contextSize))) es.contextSize = t('enterNumber')
     return es
   }
 
@@ -601,24 +603,22 @@ export default function ManageKB() {
   return (
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
       <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
-        <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-          RAG Tool
-        </Typography>
+        <AppTitle />
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, md: 3 }}>
           <Paper variant="outlined" sx={{ p: 2 }}>
             <Stack spacing={1}>
-              <Button variant="contained" startIcon={<AddIcon />} onClick={() => location.assign('/manage/kb/upload')}>Create Knowledge</Button>
+              <Button variant="contained" startIcon={<AddIcon />} onClick={() => location.assign('/manage/kb/upload')}>{t('createKnowledge')}</Button>
             </Stack>
           </Paper>
         </Grid>
         <Grid size={{ xs: 12, md: 9 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-            <Typography variant="h6">Knowledge</Typography>
+            <Typography variant="h6">{t('knowledge')}</Typography>
             <Stack direction="row" spacing={2} alignItems="center">
-              <TextField size="small" placeholder="Search" value={query} onChange={e => setQuery(e.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }} />
+              <TextField size="small" placeholder={t('search')} value={query} onChange={e => setQuery(e.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }} />
               <Button variant="outlined" onClick={() => navigate('/')} startIcon={<ArrowBackIcon />}>
-                返回主页面
+                {t('backToHome')}
               </Button>
             </Stack>
           </Stack>
@@ -689,9 +689,9 @@ export default function ManageKB() {
                           </IconButton>
                         </Stack>
                         <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: 'wrap' }}>
-                          <Chip size="small" label={kb.chunking_mode || 'GENERAL'} variant="outlined" />
-                          <Chip size="small" label={kb.index_method || 'HQ'} variant="outlined" />
-                          <Chip size="small" label={kb.retrieval_mode || 'VECTOR'} variant="outlined" />
+                          <Chip size="small" label={modeLabel(kb.chunking_mode || 'GENERAL', t)} variant="outlined" />
+                          <Chip size="small" label={modeLabel(kb.index_method || 'HQ', t)} variant="outlined" />
+                          <Chip size="small" label={modeLabel(kb.retrieval_mode || 'VECTOR', t)} variant="outlined" />
                         </Stack>
                       </Box>
                     </Stack>
@@ -717,7 +717,7 @@ export default function ManageKB() {
                           flex: 1
                         }}
                       >
-                        {kb.description || `useful for when you want to answer queries about the ${kb.name}`}
+                        {kb.description || t('usefulFor', { name: kb.name })}
                     </Typography>
                     </Box>
 
@@ -869,7 +869,7 @@ export default function ManageKB() {
                               }
                             }}
                           >
-                            ADD TAGS
+                            {t('addTags')}
                           </Button>
                         </Box>
                       )}
@@ -922,7 +922,7 @@ export default function ManageKB() {
                             {/* Search Input */}
                             <TextField
                               size="small"
-                              placeholder="Type to search or create"
+                              placeholder={t('typeToSearchTag')}
                               value={tagSearchQuery[kb.id] || ''}
                               onChange={(e) => handleTagSearch(kb.id, e.target.value)}
                               onClick={(e) => e.stopPropagation()}
@@ -1079,7 +1079,7 @@ export default function ManageKB() {
                               }}
                               sx={{ alignSelf: 'flex-start' }}
                             >
-                              MANAGE TAGS
+                              {t('manageTags')}
                             </Button>
                           </Stack>
                         </Box>
@@ -1105,8 +1105,8 @@ export default function ManageKB() {
                         <Tooltip 
                           title={
                             kb.available_document_count === kb.document_count 
-                              ? `${kb.document_count} document enabled`
-                              : `Total of ${kb.document_count} document, ${kb.available_document_count} available`
+                              ? t('documentsEnabled', { count: kb.document_count })
+                              : t('documentsAvailable', { total: kb.document_count, available: kb.available_document_count })
                           } 
                           placement="top"
                         >
@@ -1114,14 +1114,14 @@ export default function ManageKB() {
                             📄 {kb.available_document_count === kb.document_count ? kb.document_count : `${kb.available_document_count}/${kb.document_count}`}
                           </Typography>
                         </Tooltip>
-                        <Tooltip title="0 linked applications" placement="top">
+                        <Tooltip title={t('linkedApps', { count: 0 })} placement="top">
                           <Typography variant="caption" color="text.secondary" sx={{ cursor: 'help', lineHeight: 1 }}>
                             🤖 0
                           </Typography>
                         </Tooltip>
                       </Stack>
                       <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1 }}>
-                        Updated {new Date(kb.updated_at).toLocaleDateString()}
+                        {t('updatedOn', { date: new Date(kb.updated_at).toLocaleDateString() })}
                       </Typography>
                     </Stack>
                   </Paper>
@@ -1133,7 +1133,7 @@ export default function ManageKB() {
           {!loading && !error && filtered.length === 0 && (
             <Box sx={{ textAlign: 'center', py: 4 }}>
               <Typography variant="body1" color="text.secondary">
-                {kbs.length === 0 ? 'No knowledge bases found. Create your first knowledge base!' : 'No knowledge bases match your search.'}
+                {kbs.length === 0 ? t('noKb') : t('noKbMatch')}
               </Typography>
             </Box>
           )}
@@ -1141,13 +1141,13 @@ export default function ManageKB() {
       </Grid>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{form.id ? '配置知识库' : '新增知识库'}</DialogTitle>
+        <DialogTitle>{form.id ? t('configureKb') : t('addKb')}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             <TextField
               required
-              label="知识库名称"
-              placeholder="请输入知识库名称"
+              label={t('kbName')}
+              placeholder={t('enterKbName')}
               value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })}
               error={Boolean(errors.name)}
@@ -1156,8 +1156,8 @@ export default function ManageKB() {
             <TextField
               required
               select
-              label="知识库类型"
-              placeholder="请选择"
+              label={t('kbType')}
+              placeholder={t('pleaseSelect')}
               value={form.type}
               onChange={e => setForm({ ...form, type: e.target.value })}
               error={Boolean(errors.type)}
@@ -1165,22 +1165,22 @@ export default function ManageKB() {
               SelectProps={{ native: true }}
             >
               <option value=""></option>
-              <option value="文档">文档</option>
-              <option value="网页">网页</option>
-              <option value="数据库">数据库</option>
+              <option value="文档">{t('typeDocument')}</option>
+              <option value="网页">{t('typeWeb')}</option>
+              <option value="数据库">{t('typeDatabase')}</option>
             </TextField>
 
-            <Divider textAlign="left">凭证</Divider>
+            <Divider textAlign="left">{t('credentials')}</Divider>
             <TextField
-              label="Authorization Name"
-              placeholder="请输入"
+              label={t('authName')}
+              placeholder={t('pleaseEnter')}
               value={form.authName}
               onChange={e => setForm({ ...form, authName: e.target.value })}
             />
             <TextField
               required
               label="Base URL"
-              placeholder="例如：http://127.0.0.1:8000"
+              placeholder={t('baseUrlExample')}
               value={form.baseUrl}
               onChange={e => setForm({ ...form, baseUrl: e.target.value })}
               error={Boolean(errors.baseUrl)}
@@ -1188,7 +1188,7 @@ export default function ManageKB() {
             />
             <TextField
               required
-              label="上下文大小"
+              label={t('contextSize')}
               placeholder="4096"
               value={form.contextSize}
               onChange={e => setForm({ ...form, contextSize: e.target.value })}
@@ -1196,23 +1196,23 @@ export default function ManageKB() {
               helperText={errors.contextSize}
             />
 
-            <Button size="small" variant="text" sx={{ alignSelf: 'flex-start' }} href="#" target="_blank">如何集成知识库</Button>
+            <Button size="small" variant="text" sx={{ alignSelf: 'flex-start' }} href="#" target="_blank">{t('howToIntegrateKb')}</Button>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>取消</Button>
-          <Button variant="contained" onClick={onSubmit}>{form.id ? '保存' : '新增'}</Button>
+          <Button onClick={() => setDialogOpen(false)}>{t('cancel')}</Button>
+          <Button variant="contained" onClick={onSubmit}>{form.id ? t('save') : t('add')}</Button>
         </DialogActions>
       </Dialog>
 
       {/* Edit Knowledge Base Dialog */}
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Knowledge settings</DialogTitle>
+        <DialogTitle>{t('knowledgeSettings')}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             <Box>
               <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
-                Knowledge Name
+                {t('knowledgeName')}
               </Typography>
               <TextField
                 fullWidth
@@ -1220,12 +1220,12 @@ export default function ManageKB() {
                 onChange={e => setEditForm({ ...editForm, name: e.target.value })}
                 error={Boolean(editErrors.name)}
                 helperText={editErrors.name}
-                placeholder="Enter knowledge base name"
+                placeholder={t('enterKbName')}
               />
             </Box>
             <Box>
               <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
-                Description
+                {t('description')}
               </Typography>
               <TextField
                 fullWidth
@@ -1233,7 +1233,7 @@ export default function ManageKB() {
                 rows={3}
                 value={editForm.description}
                 onChange={e => setEditForm({ ...editForm, description: e.target.value })}
-                placeholder="Enter description"
+                placeholder={t('enterDescription')}
               />
             </Box>
             {editErrors.submit && (
@@ -1242,8 +1242,8 @@ export default function ManageKB() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={onEditSubmit}>Save</Button>
+          <Button onClick={() => setEditDialogOpen(false)}>{t('cancel')}</Button>
+          <Button variant="contained" onClick={onEditSubmit}>{t('save')}</Button>
         </DialogActions>
       </Dialog>
 
@@ -1265,13 +1265,13 @@ export default function ManageKB() {
           <ListItemIcon>
             <EditIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText>Edit</ListItemText>
+          <ListItemText>{t('edit')}</ListItemText>
         </MenuItem>
         <MenuItem onClick={handleDelete}>
           <ListItemIcon>
             <DeleteIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText>Delete</ListItemText>
+          <ListItemText>{t('delete')}</ListItemText>
         </MenuItem>
       </Menu>
 
@@ -1303,19 +1303,19 @@ export default function ManageKB() {
           onMouseUp={(e) => e.stopPropagation()}
         >
           <Typography variant="h6" sx={{ mb: 2 }}>
-            Manage Tags
+            {t('manageTags')}
           </Typography>
           <Stack spacing={2}>
             {/* Add new tag section */}
             <Box>
               <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
-                Add new tag
+                {t('addNewTag')}
               </Typography>
               <Stack spacing={2}>
                 <TextField
                   fullWidth
                   size="small"
-                  placeholder="Tag name"
+                  placeholder={t('tagName')}
                   value={newTagName}
                   onChange={(e) => {
                     e.stopPropagation()
@@ -1335,7 +1335,7 @@ export default function ManageKB() {
                   }}
                 />
                 <Stack direction="row" spacing={2} alignItems="center">
-                  <Typography variant="body2">Color:</Typography>
+                  <Typography variant="body2">{t('color')}</Typography>
                   <input
                     type="color"
                     value={newTagColor}
@@ -1482,22 +1482,22 @@ export default function ManageKB() {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Are you sure Delete?</DialogTitle>
+        <DialogTitle>{t('deleteKbTitle')}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            This will permanently delete the knowledge base "{selectedKb?.name}" and all its associated documents, chunks, and settings. This action cannot be undone.
+            {t('deleteKbBody', { name: selectedKb?.name || '' })}
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleDeleteDialogClose}>
-            Cancel
+            {t('cancel')}
           </Button>
           <Button 
             onClick={handleDeleteConfirm}
             variant="contained"
             color="error"
           >
-            I'm sure
+            {t('imSure')}
           </Button>
         </DialogActions>
       </Dialog>

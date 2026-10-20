@@ -22,6 +22,7 @@ import {
   Tooltip,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import { AppTitle, useI18n } from '../../i18n'
 import SearchIcon from '@mui/icons-material/Search'
 import GridViewIcon from '@mui/icons-material/GridView'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
@@ -44,6 +45,7 @@ interface TestRecord {
 }
 
 export default function RetrievalTest() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const { kbId } = useParams<{ kbId: string }>()
   const [sourceText, setSourceText] = useState('')
@@ -229,24 +231,22 @@ export default function RetrievalTest() {
   return (
     <Box sx={{ minHeight: '100vh', width: '100%', py: 1, display: 'flex', justifyContent: 'center' }}>
       <Box sx={{ maxWidth: 'lg', width: '100%', px: 2 }}>
-        <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-          RAG Tool
-        </Typography>
+        <AppTitle />
         
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h6">
-            Retrieval Test {knowledgeBaseName && `- ${knowledgeBaseName}`}
+            {t('retrievalTestTitle')} {knowledgeBaseName && `- ${knowledgeBaseName}`}
           </Typography>
           <Button variant="outlined" onClick={() => navigate(`/manage/kb/documents/${kbId}`)} startIcon={<ArrowBackIcon />}>
-            返回管理知识库
+            {t('backToDocuments')}
           </Button>
         </Stack>
 
         <Typography variant="h5" sx={{ mb: 1, fontWeight: 600 }}>
-          Retrieval Test
+          {t('retrievalTestTitle')}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Test the hitting effect of the Knowledge based on the given query text.
+          {t('retrievalTestDesc')}
         </Typography>
 
         <Box sx={{ display: 'flex', gap: 3, width: '100%' }}>
@@ -255,7 +255,7 @@ export default function RetrievalTest() {
             {/* SOURCE TEXT Panel */}
             <Paper variant="outlined" sx={{ p: 2, display: 'flex', flexDirection: 'column', border: '1px solid #e0e0e0' }}>
               <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>
-                SOURCE TEXT
+                {t('sourceText')}
               </Typography>
               
               {/* Error Message */}
@@ -284,11 +284,11 @@ export default function RetrievalTest() {
                         setSourceText(e.target.value)
                       }
                     }}
-                    placeholder="Q: Python的多进程和多线程各适用于什么场景? A: 多进程:适合CPU密集型任务,可充分利用多核CPU,避免GIL限制 多线程:适合I/O密集型任务,线程间切换开销小,但受GIL限制"
+                    placeholder={t('retrievalPlaceholder')}
                     variant="outlined"
                     fullWidth
                     error={sourceText.length > 2000}
-                    helperText={sourceText.length > 2000 ? 'Text cannot exceed 2000 characters' : ''}
+                    helperText={sourceText.length > 2000 ? t('textTooLong') : ''}
                     sx={{ 
                       '& .MuiOutlinedInput-root': {
                         alignItems: 'flex-start'
@@ -309,7 +309,7 @@ export default function RetrievalTest() {
                       endIcon={<SearchIcon />}
                       sx={{ textTransform: 'none' }}
                     >
-                      VECTOR SEARCH
+                      {t('vectorSearch')}
                     </Button>
                   </Stack>
                 </Stack>
@@ -320,7 +320,7 @@ export default function RetrievalTest() {
                     disabled={!sourceText.trim() || loading || sourceText.length > 2000}
                     sx={{ mt: 2, alignSelf: 'flex-end', px: 3 }}
                   >
-                    {loading ? 'Testing...' : 'Test'}
+                    {loading ? t('testing') : t('test')}
                   </Button>
               </Box>
             </Paper>
@@ -328,16 +328,16 @@ export default function RetrievalTest() {
             {/* Records Table */}
             <Paper variant="outlined" sx={{ p: 2, border: '1px solid #e0e0e0' }}>
               <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                Records
+                {t('records')}
               </Typography>
               
               <TableContainer>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell>SOURCE</TableCell>
-                      <TableCell>TEXT</TableCell>
-                      <TableCell>TIME</TableCell>
+                      <TableCell>{t('source')}</TableCell>
+                      <TableCell>{t('text')}</TableCell>
+                      <TableCell>{t('time')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -345,7 +345,7 @@ export default function RetrievalTest() {
                       <TableRow>
                         <TableCell colSpan={3} align="center" sx={{ py: 4 }}>
                           <Typography color="text.secondary">
-                            No test records yet. Run a test to see history.
+                            {t('noRecords')}
                           </Typography>
                         </TableCell>
                       </TableRow>

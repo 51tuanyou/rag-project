@@ -32,6 +32,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CircleIcon from '@mui/icons-material/Circle'
 // (replaced by named import Settings above)
 import { useNavigate } from 'react-router-dom'
+import { AppTitle, useI18n } from '../../i18n'
 import DeleteOutline from '@mui/icons-material/DeleteOutline'
 
 type Provider = {
@@ -55,6 +56,7 @@ type AddModelForm = {
 }
 
 export default function ManageLLM() {
+  const { t } = useI18n()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [providers, setProviders] = useState<Provider[]>([])
@@ -148,9 +150,9 @@ export default function ManageLLM() {
 
   const validate = (v: AddModelForm) => {
     const es: Record<string, string> = {}
-    if (!v.modelName.trim()) es.modelName = '必填'
-    if (!v.modelType.trim()) es.modelType = '必选'
-    if (!usingExistingKey && !v.apiKey.trim()) es.apiKey = '必填'
+    if (!v.modelName.trim()) es.modelName = t('required')
+    if (!v.modelType.trim()) es.modelType = t('requiredChoice')
+    if (!usingExistingKey && !v.apiKey.trim()) es.apiKey = t('required')
     return es
   }
 
@@ -283,21 +285,19 @@ export default function ManageLLM() {
 
   return (
     <Container maxWidth="lg" sx={{ py: 3 }}>
-      <Typography variant="h4" component="h1" sx={{ mb: 3, textAlign: 'center', fontWeight: 600, color: 'primary.main' }}>
-        RAG Tool
-      </Typography>
+      <AppTitle />
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-        <Typography variant="h5">Model Provider</Typography>
+        <Typography variant="h5">{t('modelProvider')}</Typography>
         <Stack direction="row" spacing={1}>
-          <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>返回主页面</Button>
+          <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/')}>{t('backToHome')}</Button>
         </Stack>
       </Stack>
 
       <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-        <Typography variant="subtitle1">Models</Typography>
+        <Typography variant="subtitle1">{t('models')}</Typography>
         <TextField
           size="small"
-          placeholder="Search"
+          placeholder={t('search')}
           value={query}
           onChange={e => setQuery(e.target.value)}
           InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
@@ -330,7 +330,7 @@ export default function ManageLLM() {
                     startIcon={<Settings fontSize="small" />}
                     sx={{ mt: 0.4, bgcolor: 'background.paper', borderColor: 'divider', borderRadius: 1.5, py: 0.2, px: 1, fontSize: 11, minHeight: 24, minWidth: 0, alignSelf: 'flex-start' }}
                   >
-                    CONFIG
+                    {t('config')}
                   </Button>
                 </Paper>
               </Stack>
@@ -338,16 +338,16 @@ export default function ManageLLM() {
 
             <Box sx={{ mt: 1.5, pl: 1 }}>
               <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
-                <Tooltip title="Show Models">
+                <Tooltip title={t('showModels')}>
                   <Button size="small" variant="text" onClick={() => setExpanded(prev => ({ ...prev, [p.id]: !prev[p.id] }))}>
-                    {(p.models?.length ?? 0)} Models ▾
+                    {t('modelsCount', { count: p.models?.length ?? 0 })} ▾
                   </Button>
                 </Tooltip>
                 <Stack direction="row" spacing={1}>
                   {p.id === 'ollama' && (
-                    <Button size="small" variant="text" onClick={(e) => { setCredProvider(p.id); setCredAnchor(e.currentTarget) }}>Manage Credentials</Button>
+                    <Button size="small" variant="text" onClick={(e) => { setCredProvider(p.id); setCredAnchor(e.currentTarget) }}>{t('manageCredentials')}</Button>
                   )}
-                  <Button size="small" variant="text" startIcon={<AddIcon />} onClick={() => openAddModel(p.id)}>Add Model</Button>
+                  <Button size="small" variant="text" startIcon={<AddIcon />} onClick={() => openAddModel(p.id)}>{t('addModel')}</Button>
                 </Stack>
               </Stack>
               {expanded[p.id] && p.models && (
@@ -377,7 +377,7 @@ export default function ManageLLM() {
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         PaperProps={{ sx: { p: 2, width: 420 } }}
       >
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>Custom Model Credentials</Typography>
+        <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('customCredentials')}</Typography>
         <Stack spacing={2}>
           {providers.find(p => p.id === credProvider)?.models?.map(m => (
             <Box key={m.id}>
@@ -396,7 +396,7 @@ export default function ManageLLM() {
                     functionCallSupport: false,
                   })
                   setEditOpen(true)
-                }}>Edit</Button>
+                }}>{t('edit')}</Button>
               </Stack>
               <Paper variant="outlined" sx={{ px: 1.25, py: 1, borderRadius: 1.5 }}>
                 <Stack direction="row" alignItems="center" spacing={1}>
@@ -411,7 +411,7 @@ export default function ManageLLM() {
       </Popover>
 
       <Menu open={Boolean(keyMenuAnchor)} onClose={closeKeyMenu} anchorEl={keyMenuAnchor} keepMounted>
-        <Typography sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>API Keys</Typography>
+        <Typography sx={{ px: 2, py: 1, fontSize: 12, color: 'text.secondary' }}>{t('apiKeys')}</Typography>
         {providers.find(p => p.id === keyMenuProvider)?.apiKeys.map((k, idx) => (
           <MenuItem key={k} onClick={() => selectKey(idx)} sx={{
             '& .del-btn': { display: 'none' },
@@ -420,66 +420,66 @@ export default function ManageLLM() {
             <Stack direction="row" spacing={1} alignItems="center" sx={{ width: '100%', justifyContent: 'space-between' }}>
               <CircleIcon fontSize="small" color='success' />
               <span style={{ flex: 1 }}>{k}</span>
-              <Button className="del-btn" size="small" variant="text" onClick={(e) => { e.stopPropagation(); deleteKey(idx) }}>Delete</Button>
+              <Button className="del-btn" size="small" variant="text" onClick={(e) => { e.stopPropagation(); deleteKey(idx) }}>{t('delete')}</Button>
             </Stack>
           </MenuItem>
         ))}
         <MenuItem onClick={addKey}>
-          <AddIcon fontSize="small" style={{ marginRight: 8 }} /> Add API Key
+          <AddIcon fontSize="small" style={{ marginRight: 8 }} /> {t('addApiKey')}
         </MenuItem>
       </Menu>
 
       <Dialog open={addKeyOpen} onClose={() => setAddKeyOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add OpenAI</DialogTitle>
+        <DialogTitle>{t('addModel')}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             <TextField
               required
-              label="API Key"
-              placeholder="Enter your API Key"
+              label={t('apiKey')}
+              placeholder={t('enterApiKey')}
               value={newKey.apiKey}
               onChange={e => setNewKey({ ...newKey, apiKey: e.target.value })}
             />
             <TextField
-              label="Organization"
-              placeholder="Enter your Organization ID"
+              label={t('organization')}
+              placeholder={t('enterOrg')}
               value={newKey.organization}
               onChange={e => setNewKey({ ...newKey, organization: e.target.value })}
             />
             <TextField
-              label="API Base"
-              placeholder="Enter your API Base, e.g. https://api.openai.com"
+              label={t('apiBase')}
+              placeholder={t('enterApiBase')}
               value={newKey.apiBase}
               onChange={e => setNewKey({ ...newKey, apiBase: e.target.value })}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setAddKeyOpen(false)}>Cancel</Button>
-          <Button variant="contained" disabled={!newKey.apiKey.trim()} onClick={submitAddKey}>Save</Button>
+          <Button onClick={() => setAddKeyOpen(false)}>{t('cancel')}</Button>
+          <Button variant="contained" disabled={!newKey.apiKey.trim()} onClick={submitAddKey}>{t('save')}</Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={setupKeyOpen} onClose={() => setSetupKeyOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Setup {setupProviderName.toUpperCase()}</DialogTitle>
+        <DialogTitle>{t('setupProvider', { name: setupProviderName.toUpperCase() })}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             <TextField
               required
               type="password"
-              label="API Key"
+              label={t('apiKey')}
               placeholder="****************"
               value={setupForm.apiKey}
               onChange={e => setSetupForm({ ...setupForm, apiKey: e.target.value })}
             />
             <TextField
-              label="Organization"
+              label={t('organization')}
               placeholder=""
               value={setupForm.organization}
               onChange={e => setSetupForm({ ...setupForm, organization: e.target.value })}
             />
             <TextField
-              label="API Base"
+              label={t('apiBase')}
               placeholder=""
               value={setupForm.apiBase}
               onChange={e => setSetupForm({ ...setupForm, apiBase: e.target.value })}
@@ -487,29 +487,29 @@ export default function ManageLLM() {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button color="error" onClick={removeSetupKey}>Remove</Button>
+          <Button color="error" onClick={removeSetupKey}>{t('remove')}</Button>
           <Box sx={{ flex: 1 }} />
-          <Button onClick={() => setSetupKeyOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={submitSetupKey}>Save</Button>
+          <Button onClick={() => setSetupKeyOpen(false)}>{t('cancel')}</Button>
+          <Button variant="contained" onClick={submitSetupKey}>{t('save')}</Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
-          Edit model credential
+          {t('editCredential')}
           <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>{editTitle} <Chip size="small" label="LLM" sx={{ ml: 1 }} /></Typography>
         </DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             <TextField
-              label="Authorization Name"
+              label={t('authName')}
               value={editForm.authName}
               onChange={e => setEditForm({ ...editForm, authName: e.target.value })}
               placeholder="API_KEY1"
             />
             <TextField
               required
-              label="Base URL"
+              label={t('apiBase')}
               placeholder="http://192.168.80.196:11434"
               value={editForm.baseUrl}
               onChange={e => setEditForm({ ...editForm, baseUrl: e.target.value })}
@@ -517,7 +517,7 @@ export default function ManageLLM() {
             <TextField
               required
               select
-              label="Completion mode"
+              label={t('completionMode')}
               value={editForm.completionMode}
               onChange={e => setEditForm({ ...editForm, completionMode: e.target.value })}
               SelectProps={{ native: true }}
@@ -527,51 +527,51 @@ export default function ManageLLM() {
             </TextField>
             <TextField
               required
-              label="Model context size"
+              label={t('modelContextSize')}
               value={editForm.contextSize}
               onChange={e => setEditForm({ ...editForm, contextSize: e.target.value })}
             />
             <TextField
               required
-              label="Upper bound for max tokens"
+              label={t('maxTokensBound')}
               value={editForm.maxTokens}
               onChange={e => setEditForm({ ...editForm, maxTokens: e.target.value })}
             />
             <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Vision support</Typography>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('visionSupport')}</Typography>
               <RadioGroup row value={editForm.visionSupport ? 'yes' : 'no'} onChange={(_, v) => setEditForm({ ...editForm, visionSupport: v === 'yes' })}>
-                <FormControlLabel value="yes" control={<Radio />} label="Yes" />
-                <FormControlLabel value="no" control={<Radio />} label="No" />
+                <FormControlLabel value="yes" control={<Radio />} label={t('yes')} />
+                <FormControlLabel value="no" control={<Radio />} label={t('no')} />
               </RadioGroup>
             </Box>
             <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Function call support</Typography>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('functionCallSupport')}</Typography>
               <RadioGroup row value={editForm.functionCallSupport ? 'yes' : 'no'} onChange={(_, v) => setEditForm({ ...editForm, functionCallSupport: v === 'yes' })}>
-                <FormControlLabel value="yes" control={<Radio />} label="Yes" />
-                <FormControlLabel value="no" control={<Radio />} label="No" />
+                <FormControlLabel value="yes" control={<Radio />} label={t('yes')} />
+                <FormControlLabel value="no" control={<Radio />} label={t('no')} />
               </RadioGroup>
             </Box>
-            <Button size="small" variant="text" sx={{ alignSelf: 'flex-start' }} href="#" target="_blank">How to integrate with Ollama</Button>
+            <Button size="small" variant="text" sx={{ alignSelf: 'flex-start' }} href="#" target="_blank">{t('howToOllama')}</Button>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button color="error">Remove</Button>
+          <Button color="error">{t('remove')}</Button>
           <Box sx={{ flex: 1 }} />
-          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={() => setEditOpen(false)}>Save</Button>
+          <Button onClick={() => setEditOpen(false)}>{t('cancel')}</Button>
+          <Button variant="contained" onClick={() => setEditOpen(false)}>{t('save')}</Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add OpenAI</DialogTitle>
+        <DialogTitle>{t('addModel')}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 0.5 }}>
             <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Model Type *</Typography>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('modelType')} *</Typography>
               <RadioGroup value={form.modelType} onChange={(_, v) => setForm({ ...form, modelType: v })}>
                 <FormControlLabel value="LLM" control={<Radio />} label="LLM" />
-                <FormControlLabel value="Text Embedding" control={<Radio />} label="Text Embedding" />
-                <FormControlLabel value="Rerank" control={<Radio />} label="Rerank" />
+                <FormControlLabel value="Text Embedding" control={<Radio />} label={t('embeddingModel')} />
+                <FormControlLabel value="Rerank" control={<Radio />} label={t('rerankModel')} />
                 <FormControlLabel value="Speech2text" control={<Radio />} label="Speech2text" />
                 <FormControlLabel value="Moderation" control={<Radio />} label="Moderation" />
                 <FormControlLabel value="TTS" control={<Radio />} label="TTS" />
@@ -579,8 +579,8 @@ export default function ManageLLM() {
             </Box>
             <TextField
               required
-              label="Model Name"
-              placeholder="Enter your model name"
+              label={t('modelName')}
+              placeholder={t('enterModelName')}
               value={form.modelName}
               onChange={e => setForm({ ...form, modelName: e.target.value })}
               error={Boolean(errors.modelName)}
@@ -596,22 +596,22 @@ export default function ManageLLM() {
               helperText={errors.apiKey}
             />
             <TextField
-              label="Organization"
-              placeholder="Enter your Organization ID"
+              label={t('organization')}
+              placeholder={t('enterOrg')}
               value={form.organization}
               onChange={e => setForm({ ...form, organization: e.target.value })}
             />
             <TextField
-              label="API Base"
-              placeholder="Enter your API Base"
+              label={t('apiBase')}
+              placeholder={t('enterApiBase')}
               value={form.apiBase}
               onChange={e => setForm({ ...form, apiBase: e.target.value })}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" disabled={!form.modelName.trim() || (!usingExistingKey && !form.apiKey.trim())} onClick={submitModel}>Save</Button>
+          <Button onClick={() => setDialogOpen(false)}>{t('cancel')}</Button>
+          <Button variant="contained" disabled={!form.modelName.trim() || (!usingExistingKey && !form.apiKey.trim())} onClick={submitModel}>{t('save')}</Button>
         </DialogActions>
       </Dialog>
     </Container>
